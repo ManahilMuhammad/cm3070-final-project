@@ -26,7 +26,7 @@ if ss.stage == 'upload':
             pipeline.unload_all()
 
             figure_text = pipeline.describe_figure(figure) if figure else ""
-            pipeline.release_llm(model="qwen2.5vl:latest")
+            pipeline.release_llm(model="qwen2.5vl:latest", end_of_phase=False)
 
             ss.combined = pipeline.fuse(transcript, slide_text, notes_text, figure_text)
 

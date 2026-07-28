@@ -411,14 +411,14 @@ def create_plan(performance, combined):
 
 LLM_MODEL = "llama3.2"
 
-def release_llm(model=LLM_MODEL, label="run"):
+def release_llm(model=LLM_MODEL, label="run", end_of_phase=True):
     try:
         ollama.generate(model=model, prompt="", keep_alive=0)
     except Exception as exc:
         print(f"[release_llm] could not unload {model}: {exc}")
         return False
 
-    if model == LLM_MODEL:
+    if end_of_phase:
         inst.report()
         inst.save_run(label)
         inst.reset()
