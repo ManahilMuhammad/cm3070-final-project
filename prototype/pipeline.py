@@ -24,7 +24,10 @@ def _get(name, loader):
     return _models[name]
 
 def unload_all():
-    """Release the ingestion models. Call once extraction is finished."""
+    """ 
+    releases the ingestion models
+    called once extraction is finished 
+    """
     _models.clear()
     gc.collect()
     if torch.cuda.is_available():
