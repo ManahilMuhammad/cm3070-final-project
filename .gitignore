@@ -1,2 +1,3 @@
 prototype/__pycache__
 prototype/.pytest_cache
+prototype/timings.jsonl
