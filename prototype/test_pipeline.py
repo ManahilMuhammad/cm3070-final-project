@@ -106,13 +106,31 @@ def test_describe_figure_calls_ollama_chat(monkeypatch):
 
 def test_make_summary_calls_ollama_chat(monkeypatch):
     monkeypatch.setattr(
-        pipeline.ollama, "chat", lambda model, messages: chat_response("# Summary\n...")
+        pipeline.ollama, "chat", lambda **kw: chat_response("# Summary\n...")
     )
 
     result = pipeline.make_summary("some combined text")
 
     assert result == "# Summary\n..."
     assert "summarisation" in inst.aggregate()
+
+
+def test_make_summary_deterministic_opts(monkeypatch):
+    captured = {}
+
+    def fake_chat(model, messages, options=None):
+        captured["messages"] = messages
+        captured["options"] = options
+        return chat_response("# Summary\n...")
+
+    monkeypatch.setattr(pipeline.ollama, "chat", fake_chat)
+
+    pipeline.make_summary("some combined text")
+
+    assert captured["options"] == {"temperature": 0.2, "seed": 42}
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1]["role"] == "user"
+    assert "some combined text" in captured["messages"][1]["content"]
 
 
 # --> generate_ques() / make_quiz()
@@ -165,19 +183,112 @@ def test_generate_ques_blank_answer_leak(monkeypatch):
     assert q["answer"] is None
 
 
+def test_true_false_rejects_question_phrasing(monkeypatch):
+    # phrased as question instead of statement -> invalid -> failed
+    bad = json.dumps({"question": "Which process does the brain use to learn?", "answer": "true", "options": None})
+    monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(bad))
+
+    spec = {"type": "true-false", "shape": {}, "instructions": ""}
+    q = pipeline.generate_ques("content", spec, retries=2)
+
+    assert q["failed"] is True
+
+
+def test_true_false_accepts_statement(monkeypatch):
+    good = json.dumps({"question": "The brain uses backpropagation to learn.", "answer": "false", "options": None})
+    monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(good))
+
+    spec = {"type": "true-false", "shape": {}, "instructions": ""}
+    q = pipeline.generate_ques("content", spec)
+
+    assert q.get("failed") is not True
+    assert q["answer"] == "false"
+
+
 def test_make_quiz_filters_failed(monkeypatch):
-    def fake_generate_ques(content, spec, retries=3):
+    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    calls = {"n": 0}
+
+    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
+        calls["n"] += 1
         if spec["type"] == "true-false":
             return {"type": "true-false", "question": "q", "answer": None, "options": None, "failed": True}
-        return {"type": spec["type"], "question": "q", "answer": "a", "options": None}
+        return {"type": spec["type"], "question": f"q{calls['n']}", "answer": "a", "options": None}
 
     monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
 
     quiz = pipeline.make_quiz("combined text")
 
-    assert len(quiz) == 3
+    assert len(quiz) == 6
     assert all(q["type"] != "true-false" for q in quiz)
     assert "create quiz" in inst.aggregate()
+
+
+def test_make_quiz_two_per_type(monkeypatch):
+    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+
+    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
+        n = len(avoid or [])
+        return {"type": spec["type"], "question": f"{spec['type']}-{n}", "answer": "a", "options": None}
+
+    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+
+    quiz = pipeline.make_quiz("combined text")
+
+    assert len(quiz) == 8
+    counts = {}
+    for q in quiz:
+        counts[q["type"]] = counts.get(q["type"], 0) + 1
+    assert all(c == 2 for c in counts.values())
+
+
+def test_make_quiz_passes_avoid_list(monkeypatch):
+    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    seen_avoid = []
+
+    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
+        seen_avoid.append(list(avoid or []))
+        return {"type": spec["type"], "question": "same question", "answer": "a", "options": None}
+
+    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+
+    pipeline.make_quiz("combined text")
+
+    # first call per type has nothing to avoid
+    # second call told about first question
+    first_type_calls = seen_avoid[:2]
+    assert first_type_calls[0] == []
+    assert first_type_calls[1] == ["same question"]
+
+
+def test_make_quiz_topics_round_robin(monkeypatch):
+    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    seen_topics = []
+
+    def fake_generate_ques(content, spec, retries=4, avoid=None, topic=None):
+        seen_topics.append(topic)
+        return {"type": spec["type"], "question": f"q-{len(seen_topics)}", "answer": "a", "options": None}
+
+    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+
+    quiz = pipeline.make_quiz("combined text")
+
+    assert seen_topics == ["Topic A", "Topic B"] * 4
+    assert [q["topic"] for q in quiz] == seen_topics
+
+
+def test_make_quiz_no_topics_fallback(monkeypatch):
+    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: [])
+    monkeypatch.setattr(
+        pipeline, "generate_ques",
+        lambda content, spec, retries=4, avoid=None, topic=None: {
+            "type": spec["type"], "question": "q", "answer": "a", "options": None
+        }
+    )
+
+    quiz = pipeline.make_quiz("combined text")
+
+    assert all(q["topic"] == "General" for q in quiz)
 
 
 # --> extract_topics()
@@ -197,37 +308,6 @@ def test_extract_topics_bad_json_fallback(monkeypatch):
     topics = pipeline.extract_topics("lecture text")
 
     assert topics == ["General"]
-
-
-# --> tag_topic()
-
-def test_tag_topic_no_topics():
-    assert pipeline.tag_topic("some question", []) == "General"
-
-
-def test_tag_topic_resolves_numeric_index(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "generate", lambda **kw: {"response": '{"topic": "2"}'})
-    topics = ["Alpha", "Beta", "Gamma"]
-
-    assert pipeline.tag_topic("q", topics) == "Beta"
-
-
-def test_tag_topic_index_out_of_range(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "generate", lambda **kw: {"response": '{"topic": "9"}'})
-
-    assert pipeline.tag_topic("q", ["Alpha", "Beta"]) == "Unclassified"
-
-
-def test_tag_topic_exact_text(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "generate", lambda **kw: {"response": '{"topic": "Gamma"}'})
-
-    assert pipeline.tag_topic("q", ["Alpha", "Gamma"]) == "Gamma"
-
-
-def test_tag_topic_bad_json(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "generate", lambda **kw: {"response": "not json"})
-
-    assert pipeline.tag_topic("q", ["Alpha"]) == "Unclassified"
 
 
 # --> generate_score()
@@ -274,7 +354,7 @@ def test_generate_score_sorts_topics():
 # --> generate_feedback() / create_plan()
 
 def test_generate_feedback_calls_ollama_chat(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "chat", lambda model, messages: chat_response("Great job!"))
+    monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response("Great job!"))
 
     result = pipeline.generate_feedback("[]", "combined")
 
@@ -282,13 +362,101 @@ def test_generate_feedback_calls_ollama_chat(monkeypatch):
     assert "generate feedback" in inst.aggregate()
 
 
-def test_create_plan_calls_ollama_chat(monkeypatch):
-    monkeypatch.setattr(pipeline.ollama, "chat", lambda model, messages: chat_response("Study X first."))
+def test_feedback_has_system_message(monkeypatch):
+    captured = {}
 
-    result = pipeline.create_plan("[]", "combined")
+    def fake_chat(model, messages):
+        captured["messages"] = messages
+        return chat_response("Great job!")
 
-    assert result == "Study X first."
+    monkeypatch.setattr(pipeline.ollama, "chat", fake_chat)
+
+    pipeline.generate_feedback("[]", "combined")
+
+    assert captured["messages"][0]["role"] == "system"
+    assert captured["messages"][1]["role"] == "user"
+
+
+def test_create_plan_empty_skips_llm(monkeypatch):
+    called = []
+    monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: called.append(1) or chat_response("{}"))
+
+    plan = pipeline.create_plan("[]", "combined")
+
+    assert plan == []
+    assert called == []
     assert "create plan" in inst.aggregate()
+
+
+def test_create_plan_more_days_for_weak(monkeypatch):
+    performance = json.dumps([
+        {"topic": "Weak Topic", "score": "0/2", "confidence": 0.1},
+        {"topic": "Strong Topic", "score": "2/2", "confidence": 0.9},
+    ])
+
+    monkeypatch.setattr(
+        pipeline.ollama, "chat",
+        lambda **kw: chat_response(json.dumps({
+            "actions": {
+                "Weak Topic": ["Re-read section A", "Practice problem set B"],
+                "Strong Topic": ["Quick review of key terms"],
+            }
+        }))
+    )
+
+    plan = pipeline.create_plan(performance, "combined", duration_days=6)
+
+    assert [item["day"] for item in plan] == [1, 2, 3, 4, 5, 6]
+    weak_days = [item for item in plan if item["topic"] == "Weak Topic"]
+    strong_days = [item for item in plan if item["topic"] == "Strong Topic"]
+    assert len(weak_days) > len(strong_days)
+    assert weak_days[0]["priority"] == "high"
+    assert strong_days[0]["priority"] == "low"
+
+
+def test_create_plan_short_duration(monkeypatch):
+    performance = json.dumps([
+        {"topic": "A", "confidence": 0.1},
+        {"topic": "B", "confidence": 0.3},
+        {"topic": "C", "confidence": 0.9},
+    ])
+    monkeypatch.setattr(
+        pipeline.ollama, "chat",
+        lambda **kw: chat_response(json.dumps({"actions": {"A": ["a1"], "B": ["b1"], "C": ["c1"]}}))
+    )
+
+    plan = pipeline.create_plan(performance, "combined", duration_days=2)
+
+    assert [item["topic"] for item in plan] == ["A", "B"]
+
+
+def test_allocate_days_weights_confidence():
+    topics = [("A", 0.1), ("B", 0.5), ("C", 0.9)]
+
+    allocation = pipeline._allocate_days(topics, 7)
+
+    assert sum(days for _, _, days in allocation) == 7
+    days_by_topic = {name: days for name, _, days in allocation}
+    assert days_by_topic["A"] > days_by_topic["B"] > days_by_topic["C"]
+
+
+def test_allocate_days_even_split_weighted():
+    # since duration is divided evenly across topics
+    # a remainder-only split would ignore confidence
+    # proportional weighting must not
+    topics = [("Weak", 0.1), ("Strong", 0.9)]
+
+    allocation = pipeline._allocate_days(topics, 6)
+
+    days_by_topic = {name: days for name, _, days in allocation}
+    assert sum(days_by_topic.values()) == 6
+    assert days_by_topic["Weak"] > days_by_topic["Strong"]
+
+
+def test_priority_bucket_thresholds():
+    assert pipeline._priority_bucket(0.1) == "high"
+    assert pipeline._priority_bucket(0.5) == "medium"
+    assert pipeline._priority_bucket(0.9) == "low"
 
 
 # --> unload_all()
