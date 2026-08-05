@@ -160,11 +160,22 @@ If the image contains no figure or diagram, reply with "None".
         return ""
 
     path.seek(0)
-    image = path.read()
+    image = Image.open(path).convert("RGB")
 
+    # downscale large images
+    max_side = 1024
+    if max(image.size) > max_side:
+        scale = max_side / max(image.size)
+        new_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        image = image.resize(new_size, Image.LANCZOS)
+
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+
+    # generate description
     description = ollama.chat(
         model="qwen2.5vl:latest",
-        messages=[{"role": "user", "content": prompt, "images": [image]}],
+        messages=[{"role": "user", "content": prompt, "images": [buf.getvalue()]}],
     )['message']['content']
 
     return description
@@ -339,46 +350,54 @@ def _valid_answer(ques_type, question, answer, options, avoid=None):
 
     return True
 
-def generate_ques(content, spec, retries=4, avoid=None, topic=None):
-    avoid = avoid or []
-    avoid_block = ""
-    if avoid:
-        already = "\n".join(f"- {a}" for a in avoid)
-        avoid_block = f"""
-Do NOT repeat or closely rephrase any of these questions already asked. Ask about a DIFFERENT fact or aspect of the content:
+def generate_ques_batch(content, spec, topics, retries=4, avoid=None):
+    """
+    generates one question per topic, requesting all of them in a single
+    LLM call; on retry only re-requests topics that failed validation
+    """
+    avoid = list(avoid or [])
+    ques_type = spec["type"]
+    remaining = list(topics)
+    accepted = []
+
+    for retry in range(retries):
+        if not remaining:
+            break
+
+        count = len(remaining)
+        topics_desc = "\n".join(
+            f'{i + 1}. "{t}"' if t else f"{i + 1}. Any topic from the content."
+            for i, t in enumerate(remaining)
+        )
+
+        avoid_block = ""
+        if avoid:
+            already = "\n".join(f"- {a}" for a in avoid)
+            avoid_block = f"""
+Do NOT repeat or closely rephrase any of these questions already asked:
 {already}
 """ # avoid duplicates
 
-    # give the topic to make the question about
-    topic_block = ""
-    if topic:
-        topic_block = f'\nFocus specifically on this topic: "{topic}". Do not ask about any other topic.\n'
-
-    # PROMPT
-    prompt = f"""You are a quiz generator. Read the content, then create ONE {spec["type"]} question.
+        prompt = f"""You are a quiz generator. Read the content, then create exactly {count} DIFFERENT {ques_type} questions, one for each topic listed below, in the same order.
 
 CONTENT:
 {content}
 
-Now generate ONE {spec["type"]} question about the content above.
-{spec["instructions"]}
-{topic_block}{avoid_block}
-General rules:
-- Base the question ONLY on facts stated in the content. Do not invent facts, numbers, or terms that are not in the content.
-- Write an original question in your own words. Do NOT copy a sentence verbatim from the content as the question.
-- The question must be understandable and answerable on its own, without needing to see the original content.
+Topics (one question per topic, in order):
+{topics_desc}
 
-Return ONLY a JSON object with these EXACT keys: "question", "answer", "options".
-Example shape: {json.dumps(spec["shape"])}
+{spec["instructions"]}
+{avoid_block}
+General rules:
+- Base each question ONLY on facts stated in the content. Do not invent facts, numbers, or terms that are not in the content.
+- Write original questions in your own words. Do NOT copy a sentence verbatim from the content as a question.
+- Each question must be understandable and answerable on its own, without needing to see the original content.
+- The {count} questions must all be different from each other.
+
+Return ONLY a JSON object with this EXACT key: "questions" - a list of exactly {count} objects, each with keys "question", "answer", "options", in the same order as the topics above.
+Example shape: {json.dumps({"questions": [spec["shape"]] * count})}
 Do NOT return a summary. Do NOT use any other keys."""
 
-    ques_type = spec["type"]
-    q = {}
-
-    # retry 4 times to get valid question
-    for retry in range(retries):
-
-        # generate question
         response = ollama.chat(model="llama3.2",
                                messages=[
                                    {"role": "system", "content": "You generate quiz questions as JSON. You never summarise."},
@@ -389,31 +408,30 @@ Do NOT return a summary. Do NOT use any other keys."""
                                 )
 
         try:
-            q = json.loads(response["message"]["content"])
-        except json.JSONDecodeError:
-            print(f"Failed at attempt {retry}")
+            items = json.loads(response["message"]["content"])["questions"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            print(f"Failed batch attempt {retry}")
             continue
 
-        ques = q.get("question")
-        ans = q.get("answer")
+        if not isinstance(items, list):
+            continue
 
-        # validate questions and answers and return if valid
-        if ques and ans not in (None, "", []) and _valid_answer(ques_type, ques, ans, q.get("options"), avoid):
-            return {
-                "type": ques_type,
-                "question": ques,
-                "answer": ans,
-                "options": q.get("options")
-                }
+        # go back for next retry instead of redoing whole batch
+        # if anything invalid or missing from response
+        still_needed = []
+        for topic, item in zip(remaining, items):
+            ques = item.get("question") if isinstance(item, dict) else None
+            ans = item.get("answer") if isinstance(item, dict) else None
+            opts = item.get("options") if isinstance(item, dict) else None
+            if ques and ans not in (None, "", []) and _valid_answer(ques_type, ques, ans, opts, avoid):
+                accepted.append({"type": ques_type, "question": ques, "answer": ans, "options": opts, "topic": topic or "General"})
+                avoid.append(ques)
+            else:
+                still_needed.append(topic)
+        still_needed.extend(remaining[len(items):])
+        remaining = still_needed
 
-    # return a failed question if all retries exhausted
-    return {
-            "type": ques_type,
-            "question": q.get("question"),
-            "answer": None,
-            "options": None,
-            "failed": True
-            }
+    return accepted
 
 @inst.timed("create quiz")
 def make_quiz(combined, per_type=2, topics=None):
@@ -483,18 +501,16 @@ def make_quiz(combined, per_type=2, topics=None):
     asked = []
     topic_idx = 0
     for spec in qspecs:
-        for _ in range(per_type):
 
-            # assign a target topic to each question
-            target_topic = topics[topic_idx % len(topics)] if topics else None
+        # assign per_type target topics to this type's batch
+        batch_topics = []
+        for _ in range(per_type):
+            batch_topics.append(topics[topic_idx % len(topics)] if topics else None)
             topic_idx += 1
 
-            # generate the question of the specific type, avoiding duplicates
-            q = generate_ques(combined, spec, avoid=asked, topic=target_topic)
-            if not q.get("failed"):
-                q["topic"] = target_topic or "General"
-                questions.append(q)
-                asked.append(q["question"]) # keep track of asked questions to avoid duplicates
+        batch = generate_ques_batch(combined, spec, batch_topics, avoid=asked)
+        questions.extend(batch)
+        asked.extend(q["question"] for q in batch) # keep track of asked questions to avoid duplicates
 
     return questions
 
