@@ -135,12 +135,15 @@ def ocr_notes(path):
         lines.append(image.crop((max(0, x - pad), max(0, y - pad),
                                     min(w, x + bw + pad), min(h, y + bh + pad))))
 
-    # apply TrOCR on each image
+    # apply TrOCR to all lines in a single batch instead of one generate() call per line
     notes = ""
-    for line in lines:
-        pixel_values = trocr_processor(images=line.convert("RGB"), return_tensors="pt").pixel_values
+    if lines:
+        pixel_values = trocr_processor(
+            images=[line.convert("RGB") for line in lines], return_tensors="pt"
+        ).pixel_values.to(DEVICE)
         generated_ids = trocr_model.generate(pixel_values)
-        notes += trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)[0] + "\n" # append extracted text
+        decoded = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)
+        notes = "\n".join(decoded) + "\n"
 
     return notes
 
