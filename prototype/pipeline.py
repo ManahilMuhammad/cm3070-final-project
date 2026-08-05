@@ -54,8 +54,8 @@ def transcribe_audio(path):
         return ""
 
     whisper_model = _get("whisper", lambda: WhisperModel("base", compute_type="int8"))
-    
-    segments, info = whisper_model.transcribe(path)
+
+    segments, info = whisper_model.transcribe(path, beam_size=1, vad_filter=True)
     transcript = " ".join(segment.text for segment in segments)
 
     return transcript
