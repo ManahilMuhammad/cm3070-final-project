@@ -1,4 +1,4 @@
-import io
+﻿import io
 import json
 import pytest
 import instrumentation as inst
@@ -136,86 +136,91 @@ def test_make_summary_deterministic_opts(monkeypatch):
 # --> generate_ques() / make_quiz()
 
 def test_generate_ques_succeeds_first_try(monkeypatch):
-    valid = json.dumps({"question": "2+2?", "answer": "4", "options": ["3", "4", "5", "6"]})
+    valid = json.dumps({"questions": [{"question": "2+2?", "answer": "4", "options": ["3", "4", "5", "6"]}]})
     monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(valid))
 
-    spec = {
-        "type": "multiple-choice",
-        "shape": {},
-        "instructions": "",
-    }
-    q = pipeline.generate_ques("content", spec)
+    spec = {"type": "multiple-choice", "shape": {}, "instructions": ""}
+    qs = pipeline.generate_ques("content", spec, ["Topic A"])
 
-    assert q["type"] == "multiple-choice"
-    assert q["question"] == "2+2?"
-    assert q["answer"] == "4"
-    assert "failed" not in q
+    assert len(qs) == 1
+    assert qs[0]["type"] == "multiple-choice"
+    assert qs[0]["question"] == "2+2?"
+    assert qs[0]["answer"] == "4"
+    assert qs[0]["topic"] == "Topic A"
 
 
-def test_generate_ques_retries_on_bad_json(monkeypatch):
-    calls = {"n": 0}
-    valid = json.dumps({"question": "cap of France?", "answer": "Paris", "options": None})
+def test_generate_ques_retries_only_failed_items(monkeypatch):
+    calls = []
 
     def fake_chat(**kw):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return chat_response("not json")
-        return chat_response(valid)
+        calls.append(kw)
+        if len(calls) == 1:
+            # 2 requested, first valid, second invalid (missing answer)
+            return chat_response(json.dumps({"questions": [
+                {"question": "Q about A", "answer": "a1", "options": None},
+                {"question": "bad", "answer": None, "options": None},
+            ]}))
+        # second call should only be asked for the one that failed
+        return chat_response(json.dumps({"questions": [
+            {"question": "Q about B", "answer": "a2", "options": None},
+        ]}))
 
     monkeypatch.setattr(pipeline.ollama, "chat", fake_chat)
 
     spec = {"type": "short-answer", "shape": {}, "instructions": ""}
-    q = pipeline.generate_ques("content", spec)
+    qs = pipeline.generate_ques("content", spec, ["Topic A", "Topic B"], retries=3)
 
-    assert calls["n"] == 2
-    assert q["answer"] == "Paris"
+    assert len(calls) == 2
+    assert '"Topic B"' in calls[1]["messages"][1]["content"]
+    assert '"Topic A"' not in calls[1]["messages"][1]["content"]
+    assert [q["question"] for q in qs] == ["Q about A", "Q about B"]
+    assert qs[1]["topic"] == "Topic B"
 
 
 def test_generate_ques_blank_answer_leak(monkeypatch):
-    # answer word appears in the question -> invalid -> exhausts retries -> failed
-    bad = json.dumps({"question": "Paris is the _____ of France", "answer": "Paris", "options": None})
+    # answer word appears in the question -> invalid -> exhausts retries -> dropped
+    bad = json.dumps({"questions": [{"question": "Paris is the _____ of France", "answer": "Paris", "options": None}]})
     monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(bad))
 
     spec = {"type": "fill-in-the-blank", "shape": {}, "instructions": ""}
-    q = pipeline.generate_ques("content", spec, retries=2)
+    qs = pipeline.generate_ques("content", spec, [None], retries=2)
 
-    assert q["failed"] is True
-    assert q["answer"] is None
+    assert qs == []
 
 
-def test_true_false_rejects_question_phrasing(monkeypatch):
-    # phrased as question instead of statement -> invalid -> failed
-    bad = json.dumps({"question": "Which process does the brain use to learn?", "answer": "true", "options": None})
+def test_true_false_batch_rejects_question_phrasing(monkeypatch):
+    # phrased as question instead of statement -> invalid -> dropped
+    bad = json.dumps({"questions": [{"question": "Which process does the brain use to learn?", "answer": "true", "options": None}]})
     monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(bad))
 
     spec = {"type": "true-false", "shape": {}, "instructions": ""}
-    q = pipeline.generate_ques("content", spec, retries=2)
+    qs = pipeline.generate_ques("content", spec, [None], retries=2)
 
-    assert q["failed"] is True
+    assert qs == []
 
 
-def test_true_false_accepts_statement(monkeypatch):
-    good = json.dumps({"question": "The brain uses backpropagation to learn.", "answer": "false", "options": None})
+def test_true_false_batch_accepts_statement(monkeypatch):
+    good = json.dumps({"questions": [{"question": "The brain uses backpropagation to learn.", "answer": "false", "options": None}]})
     monkeypatch.setattr(pipeline.ollama, "chat", lambda **kw: chat_response(good))
 
     spec = {"type": "true-false", "shape": {}, "instructions": ""}
-    q = pipeline.generate_ques("content", spec)
+    qs = pipeline.generate_ques("content", spec, [None], retries=2)
 
-    assert q.get("failed") is not True
-    assert q["answer"] == "false"
+    assert len(qs) == 1
+    assert qs[0]["answer"] == "false"
 
 
 def test_make_quiz_filters_failed(monkeypatch):
     monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     calls = {"n": 0}
 
-    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
+    def fake_batch(content, spec, topics, retries=4, avoid=None):
         calls["n"] += 1
         if spec["type"] == "true-false":
-            return {"type": "true-false", "question": "q", "answer": None, "options": None, "failed": True}
-        return {"type": spec["type"], "question": f"q{calls['n']}", "answer": "a", "options": None}
+            return [] # both failed and got dropped
+        return [{"type": spec["type"], "question": f"q{calls['n']}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -227,11 +232,10 @@ def test_make_quiz_filters_failed(monkeypatch):
 def test_make_quiz_two_per_type(monkeypatch):
     monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
 
-    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
-        n = len(avoid or [])
-        return {"type": spec["type"], "question": f"{spec['type']}-{n}", "answer": "a", "options": None}
+    def fake_batch(content, spec, topics, retries=4, avoid=None):
+        return [{"type": spec["type"], "question": f"{spec['type']}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -246,30 +250,29 @@ def test_make_quiz_passes_avoid_list(monkeypatch):
     monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     seen_avoid = []
 
-    def fake_generate_ques(content, spec, retries=3, avoid=None, topic=None):
+    def fake_batch(content, spec, topics, retries=4, avoid=None):
         seen_avoid.append(list(avoid or []))
-        return {"type": spec["type"], "question": "same question", "answer": "a", "options": None}
+        return [{"type": spec["type"], "question": f"{spec['type']}-q{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
 
     pipeline.make_quiz("combined text")
 
-    # first call per type has nothing to avoid
-    # second call told about first question
-    first_type_calls = seen_avoid[:2]
-    assert first_type_calls[0] == []
-    assert first_type_calls[1] == ["same question"]
+    # first type's batch has nothing to avoid
+    # second type's batch is told about every question from the first batch
+    assert seen_avoid[0] == []
+    assert seen_avoid[1] == ["multiple-choice-q0", "multiple-choice-q1"]
 
 
 def test_make_quiz_topics_round_robin(monkeypatch):
     monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     seen_topics = []
 
-    def fake_generate_ques(content, spec, retries=4, avoid=None, topic=None):
-        seen_topics.append(topic)
-        return {"type": spec["type"], "question": f"q-{len(seen_topics)}", "answer": "a", "options": None}
+    def fake_batch(content, spec, topics, retries=4, avoid=None):
+        seen_topics.extend(topics)
+        return [{"type": spec["type"], "question": f"q-{len(seen_topics)}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_generate_ques)
+    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -281,9 +284,10 @@ def test_make_quiz_no_topics_fallback(monkeypatch):
     monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: [])
     monkeypatch.setattr(
         pipeline, "generate_ques",
-        lambda content, spec, retries=4, avoid=None, topic=None: {
-            "type": spec["type"], "question": "q", "answer": "a", "options": None
-        }
+        lambda content, spec, topics, retries=4, avoid=None: [
+            {"type": spec["type"], "question": f"q-{i}", "answer": "a", "options": None, "topic": t or "General"}
+            for i, t in enumerate(topics)
+        ]
     )
 
     quiz = pipeline.make_quiz("combined text")
@@ -540,3 +544,4 @@ def test_release_llm_integration(monkeypatch, tmp_path):
     record = json.loads(lines[0])
     assert record["label"] == "integration-run"
     assert "fusion of extracted text" in record["stages"]
+
