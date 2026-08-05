@@ -1,6 +1,7 @@
 ﻿import io
 import json
 import pytest
+from PIL import Image
 import instrumentation as inst
 import pipeline
 
@@ -93,12 +94,15 @@ def test_describe_figure_calls_ollama_chat(monkeypatch):
 
     monkeypatch.setattr(pipeline.ollama, "chat", fake_chat)
 
-    fake = io.BytesIO(b"imgbytes")
+    fake = io.BytesIO()
+    Image.new("RGB", (10, 10), color="white").save(fake, format="PNG")
+    fake.seek(0)
     result = pipeline.describe_figure(fake)
 
     assert result == "a diagram of X"
     assert captured["model"] == "qwen2.5vl:latest"
-    assert captured["images"] == [b"imgbytes"]
+    assert isinstance(captured["images"], list) and len(captured["images"]) == 1
+    assert isinstance(captured["images"][0], bytes)
     assert "figure description" in inst.aggregate()
 
 
@@ -157,12 +161,12 @@ def test_generate_ques_retries_only_failed_items(monkeypatch):
         if len(calls) == 1:
             # 2 requested, first valid, second invalid (missing answer)
             return chat_response(json.dumps({"questions": [
-                {"question": "Q about A", "answer": "a1", "options": None},
+                {"question": "Alpha value is ten", "answer": "ten", "options": None},
                 {"question": "bad", "answer": None, "options": None},
             ]}))
         # second call should only be asked for the one that failed
         return chat_response(json.dumps({"questions": [
-            {"question": "Q about B", "answer": "a2", "options": None},
+            {"question": "Beta measurement equals five", "answer": "five", "options": None},
         ]}))
 
     monkeypatch.setattr(pipeline.ollama, "chat", fake_chat)
@@ -173,7 +177,7 @@ def test_generate_ques_retries_only_failed_items(monkeypatch):
     assert len(calls) == 2
     assert '"Topic B"' in calls[1]["messages"][1]["content"]
     assert '"Topic A"' not in calls[1]["messages"][1]["content"]
-    assert [q["question"] for q in qs] == ["Q about A", "Q about B"]
+    assert [q["question"] for q in qs] == ["Alpha value is ten", "Beta measurement equals five"]
     assert qs[1]["topic"] == "Topic B"
 
 
