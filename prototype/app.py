@@ -113,7 +113,7 @@ if ss.stage == 'upload':
 
             status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
 
-        pipeline.release_llm() # release llama3.2
+        pipeline.release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
         ss.stage = 'summary'
         st.rerun()
 
@@ -180,7 +180,7 @@ elif ss.stage == 'results':
 
             status.update(label='Done!', state='complete') # checkpoint 3: coplete
 
-        pipeline.release_llm() # release llama3.2
+        pipeline.release_llm(unload=False) # keep llama3.2 warm for the learning plan
 
     # FEEDBACK
     st.subheader('Feedback')
