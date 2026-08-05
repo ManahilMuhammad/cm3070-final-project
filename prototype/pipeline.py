@@ -1,4 +1,4 @@
-import ollama
+﻿import ollama
 import json
 from faster_whisper import WhisperModel
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
@@ -350,7 +350,7 @@ def _valid_answer(ques_type, question, answer, options, avoid=None):
 
     return True
 
-def generate_ques_batch(content, spec, topics, retries=4, avoid=None):
+def generate_ques(content, spec, topics, retries=4, avoid=None):
     """
     generates one question per topic, requesting all of them in a single
     LLM call; on retry only re-requests topics that failed validation
@@ -508,7 +508,7 @@ def make_quiz(combined, per_type=2, topics=None):
             batch_topics.append(topics[topic_idx % len(topics)] if topics else None)
             topic_idx += 1
 
-        batch = generate_ques_batch(combined, spec, batch_topics, avoid=asked)
+        batch = generate_ques(combined, spec, batch_topics, avoid=asked)
         questions.extend(batch)
         asked.extend(q["question"] for q in batch) # keep track of asked questions to avoid duplicates
 
