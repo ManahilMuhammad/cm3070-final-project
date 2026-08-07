@@ -1,6 +1,14 @@
 import streamlit as st
 import time
-import pipeline
+from pipeline import (
+    transcribe_audio, extract_slides, ocr_notes, describe_figure, # extraction 
+    unload_all, release_llm, # model-related
+    fuse, # utilty
+    make_summary, # summary
+    make_quiz, # quiz
+    generate_score, generate_feedback, # feedback
+    create_plan, render_study_plan # learning plan
+)
 
 st.title('CM3070 - Prototype')
 
@@ -9,57 +17,6 @@ if 'stage' not in ss:
     ss.stage = 'upload'
     ss.q_index = 0
     ss.results = []
-
-# for tagging topics in the learning plan
-PRIORITY_STYLE = {
-    "high": ("\U0001F534", "High priority"),
-    "medium": ("\U0001F7E1", "Medium priority"),
-    "low": ("\U0001F7E2", "Low priority"),
-}
-
-def plan_to_markdown(plan):
-    """
-    converts learning plan to MD
-    """
-
-    lines = ["# Your Personalised Learning Plan", ""]
-
-    for item in plan:
-        icon, label = PRIORITY_STYLE.get(item['priority'], ("", ""))
-        lines.append(f"## Day {item['day']} - {icon} {item['topic']} ({label})".strip())
-        lines.append(f"- [ ] {item['action']}")
-        lines.append("")
-
-    return "\n".join(lines)
-
-def render_study_plan(plan):
-    """
-    visualises learning plan
-    """
-
-    # if no topics were found then return
-    if not plan:
-        st.success("Nice work — no weak topics found, so no study plan is needed.")
-        return
-
-    total = len(plan)
-    done = sum(1 for item in plan if ss.get(f"plan_day_{item['day']}"))
-    st.progress(done / total, text=f"{done}/{total} days completed")
-
-    st.download_button(
-        "Download learning plan",
-        data=plan_to_markdown(plan),
-        file_name="learning_plan.md",
-        mime="text/markdown",
-        help="Save this plan so you can still access it after you close the app.",
-    )
-
-    # display topics according to priority
-    for item in plan:
-        icon, label = PRIORITY_STYLE.get(item['priority'], ("⚪", ""))
-        title = f"Day {item['day']} · {icon} {item['topic']} ({label})"
-        with st.expander(title, expanded=(item['day'] == 1)):
-            st.checkbox(item['action'], key=f"plan_day_{item['day']}")
 
 # UPLOAD SCREEN
 if ss.stage == 'upload':
@@ -77,43 +34,43 @@ if ss.stage == 'upload':
         with st.status('Processing your materials...', expanded=True) as status:
             if audio:
                 status.update(label='Transcribing audio...') # checkpoint 1: transcription
-                transcript = pipeline.transcribe_audio(audio)
+                transcript = transcribe_audio(audio)
             else:
                 transcript = ""
 
             if slides:
                 status.update(label='Extracting slide text...') # checkpoint 2: slide text extraction
-                slide_text = pipeline.extract_slides(slides)
+                slide_text = extract_slides(slides)
             else:
                 slide_text = ""
 
             if notes:
                 status.update(label='Reading handwritten notes...') # checkpoint 3: OCR
-                notes_text = pipeline.ocr_notes(notes)
+                notes_text = ocr_notes(notes)
             else:
                 notes_text = ""
 
-            pipeline.unload_all() # release models
+            unload_all() # release models
 
             if figure:
                 status.update(label='Describing figure...') # checkpoint 4: figure description
-                figure_text = pipeline.describe_figure(figure)
+                figure_text = describe_figure(figure)
             else:
                 figure_text = ""
-            pipeline.release_llm(model="qwen2.5vl:latest", end_of_phase=False)
+            release_llm(model="qwen2.5vl:latest", end_of_phase=False)
 
             status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
-            ss.combined = pipeline.fuse(transcript, slide_text, notes_text, figure_text)
+            ss.combined = fuse(transcript, slide_text, notes_text, figure_text)
 
             status.update(label='Generating summary...') # checkpoint 6: creating summary
-            ss.summary = pipeline.make_summary(ss.combined)
+            ss.summary = make_summary(ss.combined)
 
             status.update(label='Generating quiz...') # checkpoint 7: creating quiz
-            ss.quiz = pipeline.make_quiz(ss.summary)
+            ss.quiz = make_quiz(ss.summary)
 
             status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
 
-        pipeline.release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
+        release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
         ss.stage = 'summary'
         st.rerun()
 
@@ -173,14 +130,14 @@ elif ss.stage == 'results':
     if 'performance' not in ss:
         with st.status('Preparing your results...', expanded=True) as status:
             status.update(label='Scoring your answers...') # checkpoint 1: scoring
-            ss.performance = pipeline.generate_score(ss.results)
+            ss.performance = generate_score(ss.results)
 
             status.update(label='Generating feedback...') # checkpoint 2: feedback generation
-            ss.feedback = pipeline.generate_feedback(ss.performance, ss.summary)
+            ss.feedback = generate_feedback(ss.performance, ss.summary)
 
             status.update(label='Done!', state='complete') # checkpoint 3: coplete
 
-        pipeline.release_llm(unload=False) # keep llama3.2 warm for the learning plan
+        release_llm(unload=False) # keep llama3.2 warm for the learning plan
 
     # FEEDBACK
     st.subheader('Feedback')
@@ -201,10 +158,10 @@ elif ss.stage == 'results':
         if st.button('Generate my learning plan'):
             with st.status('Generating your learning plan...', expanded=True) as status:
                 status.update(label='Generating learning plan...')
-                ss.plan = pipeline.create_plan(ss.performance, ss.summary, duration_days=duration)
+                ss.plan = create_plan(ss.performance, ss.summary, duration_days=duration)
                 status.update(label='Done!', state='complete')
 
-            pipeline.release_llm() # release llama3.2
+            release_llm() # release llama3.2
             st.rerun()
 
     # display plan

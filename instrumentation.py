@@ -1,4 +1,4 @@
-import functools, json, statistics, time
+import functools, json, time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
