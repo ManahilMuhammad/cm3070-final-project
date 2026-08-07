@@ -3,7 +3,11 @@ import json
 import pytest
 from PIL import Image
 import instrumentation as inst
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 import pipeline
+import pipeline.generation_quiz as generation_quiz
 
 @pytest.fixture(autouse=True)
 def clean_records():
@@ -215,7 +219,7 @@ def test_true_false_batch_accepts_statement(monkeypatch):
 
 
 def test_make_quiz_filters_failed(monkeypatch):
-    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    monkeypatch.setattr(generation_quiz, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     calls = {"n": 0}
 
     def fake_batch(content, spec, topics, retries=4, avoid=None):
@@ -224,7 +228,7 @@ def test_make_quiz_filters_failed(monkeypatch):
             return [] # both failed and got dropped
         return [{"type": spec["type"], "question": f"q{calls['n']}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
+    monkeypatch.setattr(generation_quiz, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -234,12 +238,12 @@ def test_make_quiz_filters_failed(monkeypatch):
 
 
 def test_make_quiz_two_per_type(monkeypatch):
-    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    monkeypatch.setattr(generation_quiz, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
 
     def fake_batch(content, spec, topics, retries=4, avoid=None):
         return [{"type": spec["type"], "question": f"{spec['type']}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
+    monkeypatch.setattr(generation_quiz, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -251,14 +255,14 @@ def test_make_quiz_two_per_type(monkeypatch):
 
 
 def test_make_quiz_passes_avoid_list(monkeypatch):
-    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    monkeypatch.setattr(generation_quiz, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     seen_avoid = []
 
     def fake_batch(content, spec, topics, retries=4, avoid=None):
         seen_avoid.append(list(avoid or []))
         return [{"type": spec["type"], "question": f"{spec['type']}-q{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
+    monkeypatch.setattr(generation_quiz, "generate_ques", fake_batch)
 
     pipeline.make_quiz("combined text")
 
@@ -269,14 +273,14 @@ def test_make_quiz_passes_avoid_list(monkeypatch):
 
 
 def test_make_quiz_topics_round_robin(monkeypatch):
-    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
+    monkeypatch.setattr(generation_quiz, "extract_topics", lambda *a, **k: ["Topic A", "Topic B"])
     seen_topics = []
 
     def fake_batch(content, spec, topics, retries=4, avoid=None):
         seen_topics.extend(topics)
         return [{"type": spec["type"], "question": f"q-{len(seen_topics)}-{i}", "answer": "a", "options": None, "topic": t} for i, t in enumerate(topics)]
 
-    monkeypatch.setattr(pipeline, "generate_ques", fake_batch)
+    monkeypatch.setattr(generation_quiz, "generate_ques", fake_batch)
 
     quiz = pipeline.make_quiz("combined text")
 
@@ -285,9 +289,9 @@ def test_make_quiz_topics_round_robin(monkeypatch):
 
 
 def test_make_quiz_no_topics_fallback(monkeypatch):
-    monkeypatch.setattr(pipeline, "extract_topics", lambda *a, **k: [])
+    monkeypatch.setattr(generation_quiz, "extract_topics", lambda *a, **k: [])
     monkeypatch.setattr(
-        pipeline, "generate_ques",
+        generation_quiz, "generate_ques",
         lambda content, spec, topics, retries=4, avoid=None: [
             {"type": spec["type"], "question": f"q-{i}", "answer": "a", "options": None, "topic": t or "General"}
             for i, t in enumerate(topics)
