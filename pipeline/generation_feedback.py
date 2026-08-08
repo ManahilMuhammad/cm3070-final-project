@@ -2,6 +2,7 @@ import ollama
 from collections import defaultdict
 import instrumentation as inst
 import statistics, math, json
+from .config import TEXT_MODEL
 
 @inst.timed("generate score")
 def generate_score(results):
@@ -64,7 +65,7 @@ def generate_feedback(performance, combined):
 
     # generate the feedback according to performance
     feedback = ollama.chat(
-        model="llama3.2",
+        model=TEXT_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},

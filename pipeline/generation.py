@@ -1,7 +1,8 @@
 import ollama
 import instrumentation as inst
+from .config import TEXT_MODEL
 
-LLM_MODEL = "llama3.2"
+LLM_MODEL = TEXT_MODEL
 
 def release_llm(model=LLM_MODEL, label="run", end_of_phase=True, unload=True):
     """

@@ -1,5 +1,6 @@
 import ollama
 import instrumentation as inst
+from .config import TEXT_MODEL
 
 @inst.timed("summarisation")
 def make_summary(combined):
@@ -31,7 +32,7 @@ TEXT:
 """
 
     summary = ollama.chat(
-        model="llama3.2",
+        model=TEXT_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": prompt},

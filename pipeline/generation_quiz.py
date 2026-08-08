@@ -1,6 +1,7 @@
 import ollama
 import instrumentation as inst
 import json
+from .config import TEXT_MODEL
 
 # words that cannot be used as blank words in fill-in-the-blank
 _BLANK_STOPWORDS = {
@@ -157,7 +158,7 @@ Return ONLY a JSON object with this EXACT key: "questions" - a list of exactly {
 Example shape: {json.dumps({"questions": [spec["shape"]] * count})}
 Do NOT return a summary. Do NOT use any other keys."""
 
-        response = ollama.chat(model="llama3.2",
+        response = ollama.chat(model=TEXT_MODEL,
                                messages=[
                                    {"role": "system", "content": "You generate quiz questions as JSON. You never summarise."},
                                    {"role": "user", "content": prompt}
@@ -288,7 +289,7 @@ def extract_topics(text, n=8):
 
     for _ in range(3):
         raw = ollama.generate(
-            model="llama3.2", prompt=prompt, format="json",
+            model=TEXT_MODEL, prompt=prompt, format="json",
             options={"temperature": 0.1, "seed": 42},
         )["response"]
 

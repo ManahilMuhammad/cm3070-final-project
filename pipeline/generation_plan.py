@@ -2,6 +2,7 @@ import ollama
 import json
 import instrumentation as inst
 import streamlit as st
+from .config import TEXT_MODEL
 
 def _priority_bucket(confidence):
     """
@@ -72,7 +73,7 @@ Return ONLY JSON in this exact shape:
 
     for retry in range(retries):
         response = ollama.chat(
-            model="llama3.2",
+            model=TEXT_MODEL,
             messages=[
                 {"role": "system", "content": "You write specific study actions as JSON. You never write a paragraph."},
                 {"role": "user", "content": prompt},
