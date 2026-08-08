@@ -7,7 +7,8 @@ from pipeline import (
     make_summary, # summary
     make_quiz, # quiz
     generate_score, generate_feedback, # feedback
-    create_plan, render_study_plan # learning plan
+    create_plan, render_study_plan, # learning plan
+    VL_MODEL
 )
 
 st.title('CM3070 - Prototype')
@@ -57,7 +58,7 @@ if ss.stage == 'upload':
                 figure_text = describe_figure(figure)
             else:
                 figure_text = ""
-            release_llm(model="qwen2.5vl:latest", end_of_phase=False)
+            release_llm(model=VL_MODEL, end_of_phase=False)
 
             status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
             ss.combined = fuse(transcript, slide_text, notes_text, figure_text)

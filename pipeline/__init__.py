@@ -6,6 +6,7 @@ from .generation_summary import make_summary
 from .generation_plan import create_plan, render_study_plan, _allocate_days, _priority_bucket
 from .models import unload_all, _models
 from .utils import fuse
+from .config import TEXT_MODEL, OCR_MODEL, VL_MODEL
 import ollama
 import instrumentation as inst
 
@@ -18,5 +19,6 @@ __all__ = [
     "make_summary", # summary
     "unload_all", "_models", # model-related
     "fuse", "ollama", # utility
-    "inst" # instrumentation (for testing)
+    "inst", # instrumentation (for testing)
+    "TEXT_MODEL", "OCR_MODEL", "VL_MODEL" # model constants
 ]

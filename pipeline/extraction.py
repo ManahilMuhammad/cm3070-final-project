@@ -9,6 +9,7 @@ import io
 import instrumentation as inst
 from .models import get, load_trocr
 import torch
+from .config import VL_MODEL
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -138,7 +139,7 @@ If the image contains no figure or diagram, reply with "None".
 
     # generate description
     description = ollama.chat(
-        model="qwen2.5vl:latest",
+        model=VL_MODEL,
         messages=[{"role": "user", "content": prompt, "images": [buf.getvalue()]}],
     )['message']['content']
 

@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import pipeline
 import pipeline.generation_quiz as generation_quiz
+from pipeline import VL_MODEL
 
 @pytest.fixture(autouse=True)
 def clean_records():
@@ -104,7 +105,7 @@ def test_describe_figure_calls_ollama_chat(monkeypatch):
     result = pipeline.describe_figure(fake)
 
     assert result == "a diagram of X"
-    assert captured["model"] == "qwen2.5vl:latest"
+    assert captured["model"] == VL_MODEL
     assert isinstance(captured["images"], list) and len(captured["images"]) == 1
     assert isinstance(captured["images"][0], bytes)
     assert "figure description" in inst.aggregate()
@@ -523,7 +524,7 @@ def test_release_llm_end_of_phase_false(monkeypatch):
     monkeypatch.setattr(pipeline.inst, "save_run", lambda *a, **k: calls.append("save_run"))
     monkeypatch.setattr(pipeline.inst, "reset", lambda *a, **k: calls.append("reset"))
 
-    ok = pipeline.release_llm(model="qwen2.5vl:latest", end_of_phase=False)
+    ok = pipeline.release_llm(model=VL_MODEL, end_of_phase=False)
 
     assert ok is True
     assert calls == []
