@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 from pipeline import (
-    transcribe_audio, extract_slides, ocr_notes, describe_figure, # extraction 
+    transcribe_audio, extract_slides, ocr_notes, describe_figure, # ingestion 
     unload_all, release_llm, # model-related
     fuse, # utilty
     make_summary, # summary

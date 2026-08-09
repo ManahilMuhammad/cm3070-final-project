@@ -1,4 +1,4 @@
-from .extraction import transcribe_audio, extract_slides, ocr_notes, describe_figure
+from .ingestion import transcribe_audio, extract_slides, ocr_notes, describe_figure
 from .generation import release_llm
 from .generation_feedback import generate_score, generate_feedback
 from .generation_quiz import generate_ques, make_quiz, extract_topics
@@ -11,7 +11,7 @@ import ollama
 import instrumentation as inst
 
 __all__ = [
-    "transcribe_audio", "extract_slides", "ocr_notes", "describe_figure", # extraction
+    "transcribe_audio", "extract_slides", "ocr_notes", "describe_figure", # ingestion
     "release_llm", # general generation
     "create_plan", "render_study_plan", "_allocate_days", "_priority_bucket", # learning plan
     "generate_score", "generate_feedback", # feedback

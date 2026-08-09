@@ -17,7 +17,7 @@ def get(name, loader):
 def unload_all():
     """ 
     releases the ingestion models
-    called once extraction is finished 
+    called once ingestion is finished 
     """
     _models.clear()
     gc.collect()
