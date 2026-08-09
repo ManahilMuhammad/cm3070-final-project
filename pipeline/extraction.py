@@ -1,146 +1,177 @@
-import ollama
-from faster_whisper import WhisperModel
-from PIL import Image
+import subprocess
+import tempfile
+from pathlib import Path
 import cv2
-import numpy as np
-import fitz
+import pdfplumber
 from pptx import Presentation
-import io
-import instrumentation as inst
-from .models import get, load_trocr
-import torch
-from .config import VL_MODEL
+from PIL import Image
+import os
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+AUDIO_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.aac', '.flac', '.wma', '.ogg')
+VIDEO_EXTENSIONS = ('.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv')
+DOCUMENT_EXTENSIONS = ('.pdf', '.pptx', '.ppt')
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp')
 
-@inst.timed("transcription")
-def transcribe_audio(path):
-    if path is None:
-        return ""
+# --> AUDIO EXTRACTION
+def extract_from_audio(audio_path):
+    return str(audio_path)
 
-    whisper_model = get("whisper", lambda: WhisperModel("base", compute_type="int8"))
+# --> VIDEO EXTRACTION
 
-    segments, info = whisper_model.transcribe(path, beam_size=1, vad_filter=True)
-    transcript = " ".join(segment.text for segment in segments)
-
-    return transcript
-
-@inst.timed("slide extraction")
-def extract_slides(path):
-    if path is None:
-        return ""
+def extract_from_video(video_path):
+    """
+    extract audio and slide frames from video
+    """
+    video_path = str(video_path)
     
-    name = path.name.lower()
+    # extract audio
+    audio_path = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False).name
+    subprocess.run([
+        "ffmpeg", "-i", video_path, "-q:a", "9", "-n",
+        "-acodec", "libmp3lame", audio_path
+    ], capture_output=True)
+    
+    # extract slide frames (scene detection)
+    frames = []
+    cap = cv2.VideoCapture(video_path)
+    prev_frame = None
+    frame_count = 0
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # detect scene change
+        if prev_frame is not None:
+            diff = cv2.absdiff(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+            ).mean()
+            
+            if diff > 10:  # threshold for scene change
+                frames.append(frame)
+        
+        prev_frame = frame
+        frame_count += 1
+    
+    cap.release()
+    
+    return audio_path, frames
 
-    # PDF
-    if name.endswith('.pdf'):
-        data = path.read()
-        doc = fitz.open(stream=data, filetype="pdf")
-        text = "\n".join(page.get_text() for page in doc)
-        doc.close()
-        return text
 
-    # PPTX
-    elif name.endswith('.pptx'):
-        prs = Presentation(path)
-        lines = []
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if shape.has_text_frame:
-                    for para in shape.text_frame.paragraphs:
-                        text = ''.join(run.text for run in para.runs)
-                        if text.strip():
-                            lines.append(text)
-        return '\n'.join(lines)
+# --> PDF EXTRACTION
 
-    # other / incorrect file types do not get parsed here
-    else:
-        return ""
+def extract_from_pdf(pdf_path):
+    """
+    extract text and images/figures from PDF
+    """
+    pdf_path = str(pdf_path)
+    text_parts = []
+    images = []
+    
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            # extract text
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(page_text)
+            
+            # extract images
+            for img in page.images:
+                images.append(img)
+    
+    text = "\n\n".join(text_parts)
+    return text, images
 
-@inst.timed("OCR")
-def ocr_notes(path):
-    if path is None:
-        return ""
 
-    trocr_processor, trocr_model = get("trocr", load_trocr)
+# --> PPTX EXTRACTION
 
-    # minimum size of one box
-    min_area = 0.0004
-    pad = 6
+def extract_from_pptx(pptx_path):
+    """
+    extract text and images/figures from pptx
+    """
+    pptx_path = str(pptx_path)
+    text_parts = []
+    images = []
+    
+    prs = Presentation(pptx_path)
+    
+    for slide_idx, slide in enumerate(prs.slides):
+        for shape in slide.shapes:
+            # extract text
+            if hasattr(shape, "text") and shape.text.strip():
+                text_parts.append(shape.text)
+            
+            # extract images
+            if shape.shape_type == 13:  # image shape
+                try:
+                    image = shape.image
+                    images.append(image)
+                except Exception:
+                    pass
+    
+    text = "\n\n".join(text_parts)
+    return text, images
 
-    image = Image.open(path).convert("RGB")
-    img = np.array(image.convert("L")) # convert to grayscale
-    h, w = img.shape # get height and width
-    mean_brightness = img.mean() # get brightness
 
-    # if background is dark with light text then do not invert
-    if mean_brightness < 127:         
-        thresh_type = cv2.THRESH_BINARY  
+# --> UNIFIED ROUTER
 
-    # if background is light with dark text then invert     
-    else:                            
-        thresh_type = cv2.THRESH_BINARY_INV   
+def extract_from_file(file_obj):
+    """
+    route file to correct extraction function based on type
+    returns:
+        dict with keys: audio, text, images, slide_frames
+    """
+    filename = file_obj.name.lower()
+    
+    result = {
+        "audio": None,
+        "text": "",
+        "images": [],
+        "slide_frames": []
+    }
+    
+    # save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
+        tmp.write(file_obj.getbuffer() if hasattr(file_obj, 'getbuffer') else file_obj.read())
+        tmp_path = tmp.name
+    
+    try:
+        if any(filename.endswith(ext) for ext in VIDEO_EXTENSIONS):
+            # video
+            audio, frames = extract_from_video(tmp_path)
+            result['audio'] = audio
+            result['slide_frames'] = frames
 
-    _, binary = cv2.threshold(img, 0, 255, thresh_type + cv2.THRESH_OTSU)
-
-    # dilate white pixels horizontally so letters in a single line merge
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, w // 20), 5))
-    dilated = cv2.dilate(binary, kernel, iterations=1)
-
-    # get shape outlines for the merged white pixels
-    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    boxes = [cv2.boundingRect(c) for c in contours] # create bounding boxes around the shapes
-    boxes = [b for b in boxes if b[2] * b[3] > min_area * w * h] # only keep boxes larger than the minimum area
-    boxes.sort(key=lambda b: b[1]) # sort boxes from top to bottom
-
-    # crop each box into a separate image
-    lines = []
-    for x, y, bw, bh in boxes:
-        lines.append(image.crop((max(0, x - pad), max(0, y - pad),
-                                    min(w, x + bw + pad), min(h, y + bh + pad))))
-
-    # apply TrOCR to all lines in a single batch instead of one generate() call per line
-    notes = ""
-    if lines:
-        pixel_values = trocr_processor(
-            images=[line.convert("RGB") for line in lines], return_tensors="pt"
-        ).pixel_values.to(DEVICE)
-        generated_ids = trocr_model.generate(pixel_values)
-        decoded = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)
-        notes = "\n".join(decoded) + "\n"
-
-    return notes
-
-@inst.timed("figure description")
-def describe_figure(path): 
-    prompt = """
-You are helping create study notes from lecture material.
-Describe the figure, chart, or diagram in the uploaded image clearly including all key data,
-trends, labels, axes, or relationships, so it can be understood without seeing the image.
-If the image contains no figure or diagram, reply with "None".
-"""
-
-    if path is None:
-        return ""
-
-    path.seek(0)
-    image = Image.open(path).convert("RGB")
-
-    # downscale large images
-    max_side = 1024
-    if max(image.size) > max_side:
-        scale = max_side / max(image.size)
-        new_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-        image = image.resize(new_size, Image.LANCZOS)
-
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-
-    # generate description
-    description = ollama.chat(
-        model=VL_MODEL,
-        messages=[{"role": "user", "content": prompt, "images": [buf.getvalue()]}],
-    )['message']['content']
-
-    return description
+        elif any(filename.endswith(ext) for ext in AUDIO_EXTENSIONS):
+            # audio
+            result['audio'] = extract_from_audio(tmp_path)
+        
+        elif filename.endswith('.pdf'):
+            # PDF
+            text, images = extract_from_pdf(tmp_path)
+            result['text'] = text
+            result['images'] = images
+        
+        elif filename.endswith(('.pptx', '.ppt')):
+            # pptx
+            text, images = extract_from_pptx(tmp_path)
+            result['text'] = text
+            result['images'] = images
+        
+        elif any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS):
+            # single image (handwritten notes)
+            image = Image.open(tmp_path)
+            result['images'] = [image]
+        
+        else:
+            raise ValueError(f"Unsupported file type: {filename}")
+    
+    finally:
+        # clean up temp file
+        # unless it is an audio file because that needs to be kept for transcription
+        if os.path.exists(tmp_path) and not any(filename.endswith(ext) for ext in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS):
+            os.remove(tmp_path)
+    
+    return result
