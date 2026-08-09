@@ -6,6 +6,7 @@ import pdfplumber
 from pptx import Presentation
 from PIL import Image
 import os
+import time
 
 AUDIO_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.aac', '.flac', '.wma', '.ogg')
 VIDEO_EXTENSIONS = ('.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv')
@@ -25,11 +26,17 @@ def extract_from_video(video_path):
     video_path = str(video_path)
     
     # extract audio
-    audio_path = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False).name
-    subprocess.run([
-        "ffmpeg", "-i", video_path, "-q:a", "9", "-n",
-        "-acodec", "libmp3lame", audio_path
-    ], capture_output=True)
+    audio_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    result = subprocess.run([
+        "ffmpeg", "-i", video_path, "-q:a", "9",
+        "-acodec", "pcm_s16le", audio_path
+    ], capture_output=True, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr}")
+    
+    if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+        raise RuntimeError(f"Audio extraction produced empty file: {audio_path}")
     
     # extract slide frames (scene detection)
     frames = []
@@ -167,11 +174,19 @@ def extract_from_file(file_obj):
         
         else:
             raise ValueError(f"Unsupported file type: {filename}")
-    
+        
     finally:
-        # clean up temp file
-        # unless it is an audio file because that needs to be kept for transcription
-        if os.path.exists(tmp_path) and not any(filename.endswith(ext) for ext in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS):
-            os.remove(tmp_path)
+        # give everything time to release the file
+        time.sleep(0.1)
+        
+        # Now delete
+        try:
+            # clean up temp file
+            # unless it is an audio file because that needs to be kept for transcription
+            if os.path.exists(tmp_path) and not any(filename.endswith(ext) for ext in AUDIO_EXTENSIONS + VIDEO_EXTENSIONS):
+                os.remove(tmp_path)
+        except PermissionError:
+            # if it still fails, let system cleanup on reboot
+            pass
     
     return result

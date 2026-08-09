@@ -8,8 +8,12 @@ from pipeline import (
     make_quiz, # quiz
     generate_score, generate_feedback, # feedback
     create_plan, render_study_plan, # learning plan
+    extract_from_file, # extraction
     VL_MODEL
 )
+import tempfile
+import cv2
+import os
 
 st.title('CM3070 - Prototype')
 
@@ -21,59 +25,94 @@ if 'stage' not in ss:
 
 # UPLOAD SCREEN
 if ss.stage == 'upload':
-    audio = st.file_uploader('Lecture audio', type=['mp3', 'wav', 'm4a'])
-    slides = st.file_uploader('Slides (PDF or PPTX)', type=['pdf', 'pptx'])
-    notes = st.file_uploader('Notes (image)', type=['png', 'jpg', 'jpeg'])
-    figure = st.file_uploader('Figure / diagram (image)', type=['png', 'jpg', 'jpeg'])
+    st.subheader("Upload your lecture material")
+    st.write("Upload one or multiple files (video, audio, slides, images)")
+    
+    files = st.file_uploader(
+        'Upload files',
+        type=['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac',
+              'pdf', 'pptx', 'ppt', 'png', 'jpg', 'jpeg'],
+        accept_multiple_files=True  # allow multiple files
+    )
 
     if st.button('Process'):
-        for key in ('performance', 'feedback', 'plan'):
-            ss.pop(key, None)
-        for key in [k for k in ss.keys() if k.startswith('plan_day_')]:
-            del ss[key]
+        if not files:
+            st.warning('Please upload at least one file.')
+        else:
+            try:
+                with st.status('Processing your materials...') as status:
+                    
+                    all_transcripts = []
+                    all_slide_text = []
+                    all_notes_text = []
+                    all_figures = []
 
-        with st.status('Processing your materials...', expanded=True) as status:
-            if audio:
-                status.update(label='Transcribing audio...') # checkpoint 1: transcription
-                transcript = transcribe_audio(audio)
-            else:
-                transcript = ""
+                    for file in files:
+                        st.info(f"Processing {file.name}...")
+                        
+                        extracted = extract_from_file(file)
 
-            if slides:
-                status.update(label='Extracting slide text...') # checkpoint 2: slide text extraction
-                slide_text = extract_slides(slides)
-            else:
-                slide_text = ""
+                        # process extracted audio
+                        if extracted['audio']:
+                            status.update(label='Transcribing audio...') # checkpoint 1: transcription
+                            transcript = transcribe_audio(extracted['audio'])
+                            all_transcripts.append(transcript)
+                            unload_all()
+                        
+                        # use extracted text directly
+                        if extracted['text']:
+                            status.update(label='Extracting slide text...') # checkpoint 2: slide text extraction
+                            all_slide_text.append(extracted['text'])
+                        
+                        # apply OCR to extracted images
+                        if extracted['images']:
+                            status.update(label='Reading handwritten notes...') # checkpoint 3: OCR
+                            for img in extracted['images']:
+                                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                                    img.save(tmp.name)
+                                    notes_text = ocr_notes(tmp.name)
+                                    all_notes_text.append(notes_text)
+                                os.remove(tmp.name)
+                            unload_all()
 
-            if notes:
-                status.update(label='Reading handwritten notes...') # checkpoint 3: OCR
-                notes_text = ocr_notes(notes)
-            else:
-                notes_text = ""
+                        # describe extracted slide frames
+                        if extracted['slide_frames']:
+                            status.update(label='Describing figure...') # checkpoint 4: figure description
+                            for frame in extracted['slide_frames']:
+                                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                                    cv2.imwrite(tmp.name, frame)
+                                    description = describe_figure(tmp.name)
+                                    all_figures.append(description)
+                                os.remove(tmp.name)
+                            release_llm(model=VL_MODEL, end_of_phase=False)
 
-            unload_all() # release models
+                    status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
+                    ss.combined = fuse(
+                        " ".join(all_transcripts),
+                        " ".join(all_slide_text),
+                        " ".join(all_notes_text),
+                        " ".join(all_figures)
+                    )
+                    
+                    if not ss.combined.strip():
+                        st.warning('No content extracted. Check your files.')
+                        st.stop()
+                    
+                    status.update(label='Generating summary...') # checkpoint 6: creating summary
+                    ss.summary = make_summary(ss.combined)
+        
+                    status.update(label='Generating quiz...') # checkpoint 7: creating quiz
+                    ss.quiz = make_quiz(ss.combined) or []
 
-            if figure:
-                status.update(label='Describing figure...') # checkpoint 4: figure description
-                figure_text = describe_figure(figure)
-            else:
-                figure_text = ""
-            release_llm(model=VL_MODEL, end_of_phase=False)
+                status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
+                    
+                release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
+                ss.stage = 'summary'
+                st.rerun()
 
-            status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
-            ss.combined = fuse(transcript, slide_text, notes_text, figure_text)
-
-            status.update(label='Generating summary...') # checkpoint 6: creating summary
-            ss.summary = make_summary(ss.combined)
-
-            status.update(label='Generating quiz...') # checkpoint 7: creating quiz
-            ss.quiz = make_quiz(ss.summary)
-
-            status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
-
-        release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
-        ss.stage = 'summary'
-        st.rerun()
+            except Exception as e:
+                st.error(f'Processing failed: {type(e).__name__}: {e}')
+                st.exception(e)
 
 # SUMMARY SCREEN
 elif ss.stage == 'summary':

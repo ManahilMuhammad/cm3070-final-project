@@ -1,3 +1,4 @@
+from .extraction import extract_from_file
 from .ingestion import transcribe_audio, extract_slides, ocr_notes, describe_figure
 from .generation import release_llm
 from .generation_feedback import generate_score, generate_feedback
