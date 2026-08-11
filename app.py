@@ -72,9 +72,7 @@ if ss.stage == 'upload':
                                     img.save(tmp.name)
                                     description = describe_figure(tmp.name)
                                     all_figures.append(description)
-                                    print("Almost done..")
                                 os.remove(tmp.name)
-                                print("Okay next one!")
                             release_llm(model=VL_MODEL, end_of_phase=False)
 
                         # apply OCR to extracted slide frames

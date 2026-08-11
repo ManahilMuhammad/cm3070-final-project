@@ -124,7 +124,6 @@ If the image contains no figure or diagram, reply with "None".
     if path is None:
         return ""
 
-    path.seek(0)
     image = Image.open(path).convert("RGB")
 
     # downscale large images
