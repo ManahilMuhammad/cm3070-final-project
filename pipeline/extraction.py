@@ -7,6 +7,10 @@ from pptx import Presentation
 from PIL import Image
 import os
 import time
+import instrumentation as inst
+import fitz
+from io import BytesIO
+from .utils import prepare_images
 
 AUDIO_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.aac', '.flac', '.wma', '.ogg')
 VIDEO_EXTENSIONS = ('.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv')
@@ -18,19 +22,26 @@ def extract_from_audio(audio_path):
     return str(audio_path)
 
 # --> VIDEO EXTRACTION
-
 def extract_from_video(video_path):
     """
     extract audio and slide frames from video
     """
     video_path = str(video_path)
+    print(f"Video path: {video_path}")
     
-    # extract audio
+    # extract audio (copy file first)
     audio_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+
     result = subprocess.run([
-        "ffmpeg", "-i", video_path, "-q:a", "9",
-        "-acodec", "pcm_s16le", audio_path
-    ], capture_output=True, text=True)
+        "ffmpeg",
+        "-y",                    
+        "-i", video_path,
+        "-vn",                   
+        "-acodec", "pcm_s16le",  
+        audio_path
+    ], capture_output=True, text=True, timeout=300)  
+
+    print("-- EXTRACTED AUDIO --")
 
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
@@ -38,55 +49,44 @@ def extract_from_video(video_path):
     if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
         raise RuntimeError(f"Audio extraction produced empty file: {audio_path}")
     
-    # extract slide frames (scene detection)
-    frames = []
-    cap = cv2.VideoCapture(video_path)
-    prev_frame = None
-    frame_count = 0
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # detect scene change
-        if prev_frame is not None:
-            diff = cv2.absdiff(
-                cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
-                cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-            ).mean()
-            
-            if diff > 10:  # threshold for scene change
-                frames.append(frame)
-        
-        prev_frame = frame
-        frame_count += 1
-    
-    cap.release()
-    
-    return audio_path, frames
+    return audio_path
 
 
 # --> PDF EXTRACTION
 
 def extract_from_pdf(pdf_path):
     """
-    extract text and images/figures from PDF
+    extract text and images from PDF
     """
+    
     pdf_path = str(pdf_path)
     text_parts = []
     images = []
     
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            # extract text
-            page_text = page.extract_text()
-            if page_text:
-                text_parts.append(page_text)
+    doc = fitz.open(pdf_path)
+    
+    for page_num, page in enumerate(doc):
+        # extract text
+        page_text = page.get_text()
+        if page_text.strip():
+            text_parts.append(page_text)
+        
+        # extract images
+        image_list = page.get_images(full=True)
+        for img_index in image_list:
+            xref = img_index[0]
+            pix = fitz.Pixmap(doc, xref)
             
-            # extract images
-            for img in page.images:
-                images.append(img)
+            # convert to PIL Image
+            img_data = pix.tobytes("ppm")
+            from io import BytesIO
+            img = Image.open(BytesIO(img_data))
+            img.load()  # force load into memory
+            images.append(img)
+            
+            pix = None  # free memory
+    
+    doc.close()
     
     text = "\n\n".join(text_parts)
     return text, images
@@ -111,12 +111,23 @@ def extract_from_pptx(pptx_path):
                 text_parts.append(shape.text)
             
             # extract images
-            if shape.shape_type == 13:  # image shape
+            if shape.shape_type == 13:
                 try:
                     image = shape.image
-                    images.append(image)
-                except Exception:
-                    pass
+
+                    # convert python-pptx Image object to PIL Image
+                    pil_image = Image.open(BytesIO(image.blob))
+                    pil_image.load()
+
+                    # make a fully independent PIL image
+                    pil_image = pil_image.copy()
+
+                    images.append(pil_image)
+
+                    print("Image detected!")
+
+                except Exception as e:
+                    print(f"Failed to extract image: {e}")
     
     text = "\n\n".join(text_parts)
     return text, images
@@ -138,18 +149,20 @@ def extract_from_file(file_obj):
         "images": [],
         "slide_frames": []
     }
-    
-    # save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
-        tmp.write(file_obj.getbuffer() if hasattr(file_obj, 'getbuffer') else file_obj.read())
-        tmp_path = tmp.name
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix)
+    tmp_path = tmp.name
+
+    data = file_obj.getbuffer() if hasattr(file_obj, 'getbuffer') else file_obj.read()
+    tmp.write(data)
+    tmp.flush()
+    tmp.close()
     
     try:
         if any(filename.endswith(ext) for ext in VIDEO_EXTENSIONS):
             # video
-            audio, frames = extract_from_video(tmp_path)
+            audio = extract_from_video(tmp_path)
             result['audio'] = audio
-            result['slide_frames'] = frames
 
         elif any(filename.endswith(ext) for ext in AUDIO_EXTENSIONS):
             # audio
@@ -159,13 +172,15 @@ def extract_from_file(file_obj):
             # PDF
             text, images = extract_from_pdf(tmp_path)
             result['text'] = text
-            result['images'] = images
+            result['images'] = prepare_images(images)
+            for image in result['images']:
+                print(image)
         
-        elif filename.endswith(('.pptx', '.ppt')):
+        elif filename.endswith('.pptx'):
             # pptx
             text, images = extract_from_pptx(tmp_path)
             result['text'] = text
-            result['images'] = images
+            result['images'] = prepare_images(images)
         
         elif any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS):
             # single image (handwritten notes)
