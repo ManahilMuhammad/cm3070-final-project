@@ -139,7 +139,7 @@ def extract_from_file(file_obj):
     """
     route file to correct extraction function based on type
     returns:
-        dict with keys: audio, text, images, slide_frames
+        dict with keys: audio, text, images, notes
     """
     filename = file_obj.name.lower()
     
@@ -147,7 +147,7 @@ def extract_from_file(file_obj):
         "audio": None,
         "text": "",
         "images": [],
-        "slide_frames": []
+        "notes": []
     }
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix)
@@ -173,8 +173,6 @@ def extract_from_file(file_obj):
             text, images = extract_from_pdf(tmp_path)
             result['text'] = text
             result['images'] = prepare_images(images)
-            for image in result['images']:
-                print(image)
         
         elif filename.endswith('.pptx'):
             # pptx
@@ -183,9 +181,9 @@ def extract_from_file(file_obj):
             result['images'] = prepare_images(images)
         
         elif any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS):
-            # single image (handwritten notes)
+            # single image (written notes)
             image = Image.open(tmp_path)
-            result['images'] = [image]
+            result['notes'] = [image]
         
         else:
             raise ValueError(f"Unsupported file type: {filename}")

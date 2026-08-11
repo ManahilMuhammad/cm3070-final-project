@@ -76,11 +76,11 @@ if ss.stage == 'upload':
                             release_llm(model=VL_MODEL, end_of_phase=False)
 
                         # apply OCR to extracted slide frames
-                        if extracted['slide_frames']:
-                            status.update(label='Reading slide text...') # checkpoint 4: OCR
-                            for frame in extracted['slide_frames']:
+                        if extracted['notes']:
+                            status.update(label='Reading notes...') # checkpoint 4: OCR
+                            for note in extracted['notes']:
                                 with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                                    cv2.imwrite(tmp.name, frame)
+                                    cv2.imwrite(tmp.name, note)
                                     notes_text = ocr_notes(tmp.name)
                                     all_notes_text.append(notes_text)
                                 os.remove(tmp.name)
