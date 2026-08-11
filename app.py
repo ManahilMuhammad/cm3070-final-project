@@ -31,7 +31,7 @@ if ss.stage == 'upload':
     files = st.file_uploader(
         'Upload files',
         type=['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac',
-              'pdf', 'pptx', 'ppt', 'png', 'jpg', 'jpeg'],
+              'pdf', 'pptx', 'png', 'jpg', 'jpeg'],
         accept_multiple_files=True  # allow multiple files
     )
 
@@ -64,27 +64,29 @@ if ss.stage == 'upload':
                             status.update(label='Extracting slide text...') # checkpoint 2: slide text extraction
                             all_slide_text.append(extracted['text'])
                         
-                        # apply OCR to extracted images
+                        # describe extracted images (figures/diagrams from PDF/PPTX)
                         if extracted['images']:
-                            status.update(label='Reading handwritten notes...') # checkpoint 3: OCR
+                            status.update(label='Describing figures...') # checkpoint 3: figure description
                             for img in extracted['images']:
                                 with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
                                     img.save(tmp.name)
+                                    description = describe_figure(tmp.name)
+                                    all_figures.append(description)
+                                    print("Almost done..")
+                                os.remove(tmp.name)
+                                print("Okay next one!")
+                            release_llm(model=VL_MODEL, end_of_phase=False)
+
+                        # apply OCR to extracted slide frames
+                        if extracted['slide_frames']:
+                            status.update(label='Reading slide text...') # checkpoint 4: OCR
+                            for frame in extracted['slide_frames']:
+                                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                                    cv2.imwrite(tmp.name, frame)
                                     notes_text = ocr_notes(tmp.name)
                                     all_notes_text.append(notes_text)
                                 os.remove(tmp.name)
                             unload_all()
-
-                        # describe extracted slide frames
-                        if extracted['slide_frames']:
-                            status.update(label='Describing figure...') # checkpoint 4: figure description
-                            for frame in extracted['slide_frames']:
-                                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                                    cv2.imwrite(tmp.name, frame)
-                                    description = describe_figure(tmp.name)
-                                    all_figures.append(description)
-                                os.remove(tmp.name)
-                            release_llm(model=VL_MODEL, end_of_phase=False)
 
                     status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
                     ss.combined = fuse(
@@ -102,7 +104,7 @@ if ss.stage == 'upload':
                     ss.summary = make_summary(ss.combined)
         
                     status.update(label='Generating quiz...') # checkpoint 7: creating quiz
-                    ss.quiz = make_quiz(ss.combined) or []
+                    ss.quiz = make_quiz(ss.summary) or []
 
                 status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
                     
