@@ -90,8 +90,8 @@ def image_phash(images, max_dist=5):
         # whether image is visually similar
         is_dupe = False
 
-        for hash in hashes:
-            dist = h - hash
+        for hs in hashes:
+            dist = h - hs
 
             if dist <= max_dist:
                 is_dupe = True # duplicate detected
