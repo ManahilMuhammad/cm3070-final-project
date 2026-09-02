@@ -15,7 +15,7 @@ import tempfile
 import cv2
 import os
 
-st.title('CM3070 - Prototype')
+st.title('Sprout')
 
 ss = st.session_state
 if 'stage' not in ss:
@@ -80,10 +80,17 @@ if ss.stage == 'upload':
                             status.update(label='Reading notes...') # checkpoint 4: OCR
                             for note in extracted['notes']:
                                 with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                                    cv2.imwrite(tmp.name, note)
-                                    notes_text = ocr_notes(tmp.name)
+                                    tmp_path = tmp.name
+                                    
+                                try:
+                                    note.convert("RGB").save(tmp_path, format="PNG")
+                                    notes_text = ocr_notes(tmp_path)
                                     all_notes_text.append(notes_text)
-                                os.remove(tmp.name)
+
+                                finally:
+                                    if os.path.exists(tmp_path):
+                                        os.remove(tmp_path)
+                                    
                             unload_all()
 
                     status.update(label='Combining extracted content...') # checkpoint 5: combining extracted text
