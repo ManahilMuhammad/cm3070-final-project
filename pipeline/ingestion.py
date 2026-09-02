@@ -126,13 +126,6 @@ If the image contains no figure or diagram, reply with "None".
 
     image = Image.open(path).convert("RGB")
 
-    # downscale large images
-    max_side = 1024
-    if max(image.size) > max_side:
-        scale = max_side / max(image.size)
-        new_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-        image = image.resize(new_size, Image.LANCZOS)
-
     buf = io.BytesIO()
     image.save(buf, format="PNG")
 
