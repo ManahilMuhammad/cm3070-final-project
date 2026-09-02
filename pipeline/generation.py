@@ -4,7 +4,7 @@ from .config import TEXT_MODEL
 
 LLM_MODEL = TEXT_MODEL
 
-def release_llm(model=LLM_MODEL, label="run", end_of_phase=True, unload=True):
+def release_llm(model=LLM_MODEL, label='run', end_of_phase=True, unload=True):
     """
     free up GPU/RAM.
     unload=False keeps the model
@@ -12,9 +12,9 @@ def release_llm(model=LLM_MODEL, label="run", end_of_phase=True, unload=True):
     """
     if unload:
         try:
-            ollama.generate(model=model, prompt="", keep_alive=0)
+            ollama.generate(model=model, prompt='', keep_alive=0)
         except Exception as exc:
-            print(f"[release_llm] could not unload {model}: {exc}")
+            print(f'[release_llm] could not unload {model}: {exc}')
             return False
 
     if end_of_phase:

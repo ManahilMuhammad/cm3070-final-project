@@ -14,6 +14,7 @@ from pipeline import (
 import tempfile
 import cv2
 import os
+import tts
 
 st.title('Sprout')
 
@@ -126,7 +127,10 @@ elif ss.stage == 'summary':
     st.header('Summary')
     st.markdown(ss.summary)
 
+    tts.controls(ss.summary, key='summary') # text-to-speech options
+
     if st.button('Start quiz'):
+        tts.stop() # stop text-to-speech
         ss.stage = 'quiz'
         ss.q_start = time.time() 
         st.rerun()
@@ -149,7 +153,18 @@ elif ss.stage == 'quiz':
     else:
         answer = st.text_input('Your answer:', key=f'q{ss.q_index}')
 
+
+    # read out questions and answers to choose from
+    spoken = q['question'].replace('_____', 'blank') # replace the spaces with the word 'blank' in text-to-speech
+    if q['type'] == 'true-false':
+        spoken += '. Is this true or false?' # read out true/false options
+    elif q.get('options'):
+        spoken += '. Your options are: ' + ', '.join(f'{i}. {o}' for i, o in enumerate(q['options'], 1)) # read out mcq options
+
+    tts.controls(spoken, key=f'q{ss.q_index}', label='Read question') # text-to-speech
+
     if st.button('Submit'):
+        tts.stop() # stop text-to-speech
         elapsed = time.time() - ss.q_start
 
         ss.results.append({
@@ -190,6 +205,8 @@ elif ss.stage == 'results':
     st.subheader('Feedback')
     st.write(ss.feedback)
 
+    tts.controls(ss.feedback, key='feedback') # text-to-speech
+
     # LEARNING PLAN
     st.subheader('Your Personalised Learning Plan')
 
@@ -203,6 +220,7 @@ elif ss.stage == 'results':
         )
 
         if st.button('Generate my learning plan'):
+            tts.stop() # stop text-to-speech
             with st.status('Generating your learning plan...', expanded=True) as status:
                 status.update(label='Generating learning plan...')
                 ss.plan = create_plan(ss.performance, ss.summary, duration_days=duration)

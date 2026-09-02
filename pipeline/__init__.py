@@ -12,14 +12,14 @@ import ollama
 import instrumentation as inst
 
 __all__ = [
-    "transcribe_audio", "extract_slides", "ocr_notes", "describe_figure", # ingestion
-    "release_llm", # general generation
-    "create_plan", "render_study_plan", "_allocate_days", "_priority_bucket", # learning plan
-    "generate_score", "generate_feedback", # feedback
-    "generate_ques", "make_quiz", "extract_topics", # quiz 
-    "make_summary", # summary
-    "unload_all", "_models", # model-related
-    "fuse", "ollama", # utility
-    "inst", # instrumentation (for testing)
-    "TEXT_MODEL", "OCR_MODEL", "VL_MODEL" # model constants
+    'transcribe_audio', 'extract_slides', 'ocr_notes', 'describe_figure', # ingestion
+    'release_llm', # general generation
+    'create_plan', 'render_study_plan', '_allocate_days', '_priority_bucket', # learning plan
+    'generate_score', 'generate_feedback', # feedback
+    'generate_ques', 'make_quiz', 'extract_topics', # quiz 
+    'make_summary', # summary
+    'unload_all', '_models', # model-related
+    'fuse', 'ollama', # utility
+    'inst', # instrumentation (for testing)
+    'TEXT_MODEL', 'OCR_MODEL', 'VL_MODEL' # model constants
 ]

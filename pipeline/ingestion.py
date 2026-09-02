@@ -11,32 +11,32 @@ from .models import get, load_trocr
 import torch
 from .config import VL_MODEL
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-@inst.timed("transcription")
+@inst.timed('transcription')
 def transcribe_audio(path):
     if path is None:
-        return ""
+        return ''
 
-    whisper_model = get("whisper", lambda: WhisperModel("base", compute_type="int8"))
+    whisper_model = get('whisper', lambda: WhisperModel('base', compute_type='int8'))
 
     segments, info = whisper_model.transcribe(path, beam_size=1, vad_filter=True)
-    transcript = " ".join(segment.text for segment in segments)
+    transcript = ' '.join(segment.text for segment in segments)
 
     return transcript
 
-@inst.timed("slide extraction")
+@inst.timed('slide extraction')
 def extract_slides(path):
     if path is None:
-        return ""
+        return ''
     
     name = path.name.lower()
 
     # PDF
     if name.endswith('.pdf'):
         data = path.read()
-        doc = fitz.open(stream=data, filetype="pdf")
-        text = "\n".join(page.get_text() for page in doc)
+        doc = fitz.open(stream=data, filetype='pdf')
+        text = '\n'.join(page.get_text() for page in doc)
         doc.close()
         return text
 
@@ -55,21 +55,21 @@ def extract_slides(path):
 
     # other / incorrect file types do not get parsed here
     else:
-        return ""
+        return ''
 
-@inst.timed("OCR")
+@inst.timed('OCR')
 def ocr_notes(path):
     if path is None:
-        return ""
+        return ''
 
-    trocr_processor, trocr_model = get("trocr", load_trocr)
+    trocr_processor, trocr_model = get('trocr', load_trocr)
 
     # minimum size of one box
     min_area = 0.0004
     pad = 6
 
-    image = Image.open(path).convert("RGB")
-    img = np.array(image.convert("L")) # convert to grayscale
+    image = Image.open(path).convert('RGB')
+    img = np.array(image.convert('L')) # convert to grayscale
     h, w = img.shape # get height and width
     mean_brightness = img.mean() # get brightness
 
@@ -101,38 +101,38 @@ def ocr_notes(path):
                                     min(w, x + bw + pad), min(h, y + bh + pad))))
 
     # apply TrOCR to all lines in a single batch instead of one generate() call per line
-    notes = ""
+    notes = ''
     if lines:
         pixel_values = trocr_processor(
-            images=[line.convert("RGB") for line in lines], return_tensors="pt"
+            images=[line.convert('RGB') for line in lines], return_tensors='pt'
         ).pixel_values.to(DEVICE)
         generated_ids = trocr_model.generate(pixel_values)
         decoded = trocr_processor.batch_decode(generated_ids, skip_special_tokens=True)
-        notes = "\n".join(decoded) + "\n"
+        notes = '\n'.join(decoded) + '\n'
 
     return notes
 
-@inst.timed("figure description")
+@inst.timed('figure description')
 def describe_figure(path): 
     prompt = """
 You are helping create study notes from lecture material.
 Describe the figure, chart, or diagram in the uploaded image clearly including all key data,
 trends, labels, axes, or relationships, so it can be understood without seeing the image.
-If the image contains no figure or diagram, reply with "None".
+If the image contains no figure or diagram, reply with 'None'.
 """
 
     if path is None:
-        return ""
+        return ''
 
-    image = Image.open(path).convert("RGB")
+    image = Image.open(path).convert('RGB')
 
     buf = io.BytesIO()
-    image.save(buf, format="PNG")
+    image.save(buf, format='PNG')
 
     # generate description
     description = ollama.chat(
         model=VL_MODEL,
-        messages=[{"role": "user", "content": prompt, "images": [buf.getvalue()]}],
+        messages=[{'role': 'user', 'content': prompt, 'images': [buf.getvalue()]}],
     )['message']['content']
 
     return description

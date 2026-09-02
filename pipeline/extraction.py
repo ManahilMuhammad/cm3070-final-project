@@ -29,22 +29,22 @@ def extract_from_video(video_path):
     video_path = str(video_path)
     
     # extract audio (copy file first)
-    audio_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    audio_path = tempfile.NamedTemporaryFile(suffix='.wav', delete=False).name
 
     result = subprocess.run([
-        "ffmpeg",
-        "-y", # overwrite output file                    
-        "-i", video_path, # input file
-        "-vn", # keep only audio                  
-        "-acodec", "pcm_s16le",
+        'ffmpeg',
+        '-y', # overwrite output file                    
+        '-i', video_path, # input file
+        '-vn', # keep only audio                  
+        '-acodec', 'pcm_s16le',
         audio_path # output file
     ], capture_output=True, text=True, timeout=300) # raise timeout if longer than 300 seconds taken
 
     if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed: {result.stderr}")
+        raise RuntimeError(f'ffmpeg failed: {result.stderr}')
     
     if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-        raise RuntimeError(f"Audio extraction produced empty file: {audio_path}")
+        raise RuntimeError(f'Audio extraction produced empty file: {audio_path}')
     
     return audio_path
 
@@ -74,7 +74,7 @@ def extract_from_pdf(pdf_path):
             pix = fitz.Pixmap(doc, xref)
             
             # convert to PIL Image
-            img_data = pix.tobytes("ppm")
+            img_data = pix.tobytes('ppm')
             img = Image.open(BytesIO(img_data))
             img.load()  # force load into memory
             images.append(img)
@@ -83,7 +83,7 @@ def extract_from_pdf(pdf_path):
     
     doc.close()
     
-    text = "\n\n".join(text_parts)
+    text = '\n\n'.join(text_parts)
     return text, images
 
 
@@ -101,7 +101,7 @@ def extract_from_pptx(pptx_path):
     for slide_idx, slide in enumerate(prs.slides):
         for shape in slide.shapes:
             # extract text
-            if hasattr(shape, "text") and shape.text.strip():
+            if hasattr(shape, 'text') and shape.text.strip():
                 text_parts.append(shape.text)
             
             # extract images
@@ -118,9 +118,9 @@ def extract_from_pptx(pptx_path):
                     images.append(pil_image)
 
                 except Exception as e:
-                    print(f"Failed to extract image: {e}")
+                    print(f'Failed to extract image: {e}')
     
-    text = "\n\n".join(text_parts)
+    text = '\n\n'.join(text_parts)
     return text, images
 
 
@@ -134,10 +134,10 @@ def extract_from_file(file_obj):
     filename = file_obj.name.lower()
     
     result = {
-        "audio": None,
-        "text": "",
-        "images": [],
-        "notes": []
+        'audio': None,
+        'text': '',
+        'images': [],
+        'notes': []
     }
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix)
@@ -176,7 +176,7 @@ def extract_from_file(file_obj):
             result['notes'] = [image]
         
         else:
-            raise ValueError(f"Unsupported file type: {filename}")
+            raise ValueError(f'Unsupported file type: {filename}')
         
     finally:
         # give everything time to release the file

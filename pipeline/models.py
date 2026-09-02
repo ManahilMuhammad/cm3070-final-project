@@ -4,7 +4,7 @@ import torch
 
 _models = {}
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def get(name, loader):
     """
@@ -28,7 +28,7 @@ def load_trocr():
     """
     loads TrOCR once
     """
-    name = "microsoft/trocr-base-handwritten"
+    name = 'microsoft/trocr-base-handwritten'
     processor = TrOCRProcessor.from_pretrained(name)
     model = VisionEncoderDecoderModel.from_pretrained(name).to(DEVICE)
     model.eval()

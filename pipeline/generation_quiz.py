@@ -5,17 +5,17 @@ from .config import TEXT_MODEL
 
 # words that cannot be used as blank words in fill-in-the-blank
 _BLANK_STOPWORDS = {
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "of", "in", "on", "at", "to", "for", "and", "or", "but", "it", "its",
-    "this", "that", "these", "those", "as", "by", "with", "from", "not",
+    'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'of', 'in', 'on', 'at', 'to', 'for', 'and', 'or', 'but', 'it', 'its',
+    'this', 'that', 'these', 'those', 'as', 'by', 'with', 'from', 'not',
 }
 
 # words that cannot appear at the beginning of a true-false question 
 # (because they would make it a question rather than a statement that is true or false)
 _QUESTION_STARTERS = {
-    "which", "what", "who", "whom", "whose", "how", "why", "when", "where",
-    "does", "do", "did", "is", "are", "was", "were", "can", "could", "will",
-    "would", "should", "has", "have", "had",
+    'which', 'what', 'who', 'whom', 'whose', 'how', 'why', 'when', 'where',
+    'does', 'do', 'did', 'is', 'are', 'was', 'were', 'can', 'could', 'will',
+    'would', 'should', 'has', 'have', 'had',
 }
 
 def _question_words(text):
@@ -58,7 +58,7 @@ def _valid_answer(ques_type, question, answer, options, avoid=None):
         return False
 
     # MCQ
-    if ques_type == "multiple-choice":
+    if ques_type == 'multiple-choice':
 
         # check for correct type and length of options list
         if not isinstance(options, list) or len(options) != 4:
@@ -73,10 +73,10 @@ def _valid_answer(ques_type, question, answer, options, avoid=None):
         return ans in cleaned
 
     # fill-in-the-blank
-    if ques_type == "fill-in-the-blank":
+    if ques_type == 'fill-in-the-blank':
 
         # check for missing blank
-        if "_____" not in question:
+        if '_____' not in question:
             return False
 
         # check that answer is not present within question
@@ -87,24 +87,24 @@ def _valid_answer(ques_type, question, answer, options, avoid=None):
         return len(ans) >= 3 and ans.lower() not in _BLANK_STOPWORDS
 
     # true-false
-    if ques_type == "true-false":
+    if ques_type == 'true-false':
 
         # check that answer is either true or false
-        if ans.lower() not in ("true", "false"):
+        if ans.lower() not in ('true', 'false'):
             return False
 
         stripped = question.strip()
 
         # check that the sentence is not a question
-        if stripped.endswith("?"):
+        if stripped.endswith('?'):
             return False
 
         # check that the first word is not one of the question starters
-        first_word = stripped.split(" ", 1)[0].lower().strip(",.:;\"'")
+        first_word = stripped.split(' ', 1)[0].lower().strip(",.:;\"'")
         return first_word not in _QUESTION_STARTERS
 
     # short-answer
-    if ques_type == "short-answer":
+    if ques_type == 'short-answer':
         # check that answer is between 1 and 6 words, inclusive (short)
         return 1 <= len(ans.split()) <= 6
 
@@ -116,7 +116,7 @@ def generate_ques(content, spec, topics, retries=4, avoid=None):
     LLM call; on retry only re-requests topics that failed validation
     """
     avoid = list(avoid or [])
-    ques_type = spec["type"]
+    ques_type = spec['type']
     remaining = list(topics)
     accepted = []
 
@@ -125,14 +125,14 @@ def generate_ques(content, spec, topics, retries=4, avoid=None):
             break
 
         count = len(remaining)
-        topics_desc = "\n".join(
+        topics_desc = '\n'.join(
             f'{i + 1}. "{t}"' if t else f"{i + 1}. Any topic from the content."
             for i, t in enumerate(remaining)
         )
 
-        avoid_block = ""
+        avoid_block = ''
         if avoid:
-            already = "\n".join(f"- {a}" for a in avoid)
+            already = '\n'.join(f'- {a}' for a in avoid)
             avoid_block = f"""
 Do NOT repeat or closely rephrase any of these questions already asked:
 {already}
@@ -146,7 +146,7 @@ CONTENT:
 Topics (one question per topic, in order):
 {topics_desc}
 
-{spec["instructions"]}
+{spec['instructions']}
 {avoid_block}
 General rules:
 - Base each question ONLY on facts stated in the content. Do not invent facts, numbers, or terms that are not in the content.
@@ -154,23 +154,23 @@ General rules:
 - Each question must be understandable and answerable on its own, without needing to see the original content.
 - The {count} questions must all be different from each other.
 
-Return ONLY a JSON object with this EXACT key: "questions" - a list of exactly {count} objects, each with keys "question", "answer", "options", in the same order as the topics above.
-Example shape: {json.dumps({"questions": [spec["shape"]] * count})}
+Return ONLY a JSON object with this EXACT key: 'questions' - a list of exactly {count} objects, each with keys 'question', 'answer', 'options', in the same order as the topics above.
+Example shape: {json.dumps({'questions': [spec['shape']] * count})}
 Do NOT return a summary. Do NOT use any other keys."""
 
         response = ollama.chat(model=TEXT_MODEL,
                                messages=[
-                                   {"role": "system", "content": "You generate quiz questions as JSON. You never summarise."},
-                                   {"role": "user", "content": prompt}
+                                   {'role': 'system', 'content': 'You generate quiz questions as JSON. You never summarise.'},
+                                   {'role': 'user', 'content': prompt}
                                 ],
-                                format="json",
-                                options={"temperature": 0.3},
+                                format='json',
+                                options={'temperature': 0.3},
                                 )
 
         try:
-            items = json.loads(response["message"]["content"])["questions"]
+            items = json.loads(response['message']['content'])['questions']
         except (json.JSONDecodeError, KeyError, TypeError):
-            print(f"Failed batch attempt {retry}")
+            print(f'Failed batch attempt {retry}')
             continue
 
         if not isinstance(items, list):
@@ -180,11 +180,11 @@ Do NOT return a summary. Do NOT use any other keys."""
         # if anything invalid or missing from response
         still_needed = []
         for topic, item in zip(remaining, items):
-            ques = item.get("question") if isinstance(item, dict) else None
-            ans = item.get("answer") if isinstance(item, dict) else None
-            opts = item.get("options") if isinstance(item, dict) else None
-            if ques and ans not in (None, "", []) and _valid_answer(ques_type, ques, ans, opts, avoid):
-                accepted.append({"type": ques_type, "question": ques, "answer": ans, "options": opts, "topic": topic or "General"})
+            ques = item.get('question') if isinstance(item, dict) else None
+            ans = item.get('answer') if isinstance(item, dict) else None
+            opts = item.get('options') if isinstance(item, dict) else None
+            if ques and ans not in (None, '', []) and _valid_answer(ques_type, ques, ans, opts, avoid):
+                accepted.append({'type': ques_type, 'question': ques, 'answer': ans, 'options': opts, 'topic': topic or 'General'})
                 avoid.append(ques)
             else:
                 still_needed.append(topic)
@@ -193,7 +193,7 @@ Do NOT return a summary. Do NOT use any other keys."""
 
     return accepted
 
-@inst.timed("create quiz")
+@inst.timed('create quiz')
 def make_quiz(combined, per_type=2, topics=None):
     questions = []
 
@@ -204,9 +204,9 @@ def make_quiz(combined, per_type=2, topics=None):
     # specifications for each question type
     qspecs = [
         {
-            "type": "multiple-choice",
-            "shape": {"question": "<question>", "answer": "<correct answer>", "options": ["<option1>","<option2>","<option3>","<option4>"]},
-            "instructions": (
+            'type': 'multiple-choice',
+            'shape': {'question': '<question>', 'answer': '<correct answer>', 'options': ['<option1>','<option2>','<option3>','<option4>']},
+            'instructions': (
                 "Ask about a specific fact, definition, or relationship from the content. "
                 "Provide exactly 4 options. Exactly ONE must be correct and explicitly "
                 "supported by the content; the other 3 must be plausible but clearly "
@@ -217,9 +217,9 @@ def make_quiz(combined, per_type=2, topics=None):
             )
         },
         {
-            "type": "fill-in-the-blank",
-            "shape": {"question": "<sentence with a missing word represented as _____>", "answer": "<missing word>", "options": None},
-            "instructions": (
+            'type': 'fill-in-the-blank',
+            'shape': {'question': '<sentence with a missing word represented as _____>', 'answer': '<missing word>', 'options': None},
+            'instructions': (
                 "Write ONE original factual sentence based on the content (do not "
                 "copy a sentence verbatim from the content). Replace ONE important, "
                 "specific keyword or technical term that is central to that "
@@ -232,9 +232,9 @@ def make_quiz(combined, per_type=2, topics=None):
             )
         },
         {
-            "type": "true-false",
-            "shape": {"question": "<statement>", "answer": "<correct answer>", "options": None},
-            "instructions": (
+            'type': 'true-false',
+            'shape': {'question': '<statement>', 'answer': '<correct answer>', 'options': None},
+            'instructions': (
                 "Write ONE original declarative STATEMENT, in your own words, that "
                 "is clearly true or clearly false according to the content - not a "
                 "sentence copied verbatim from it. This must be a statement, NOT a "
@@ -245,9 +245,9 @@ def make_quiz(combined, per_type=2, topics=None):
             )
         },
         {
-            "type": "short-answer",
-            "shape": {"question": "<question>", "answer": "<short answer>", "options": None},
-            "instructions": (
+            'type': 'short-answer',
+            'shape': {'question': '<question>', 'answer': '<short answer>', 'options': None},
+            'instructions': (
                 "Ask a specific factual question that has exactly ONE unambiguous, "
                 "short correct answer: a single word, number, or short phrase of at "
                 "most 3-4 words (e.g. a name, term, or figure from the content). Do "
@@ -270,11 +270,11 @@ def make_quiz(combined, per_type=2, topics=None):
 
         batch = generate_ques(combined, spec, batch_topics, avoid=asked)
         questions.extend(batch)
-        asked.extend(q["question"] for q in batch) # keep track of asked questions to avoid duplicates
+        asked.extend(q['question'] for q in batch) # keep track of asked questions to avoid duplicates
 
     return questions
 
-@inst.timed("extract topics")
+@inst.timed('extract topics')
 def extract_topics(text, n=8):
     """
     extract topics from source text
@@ -283,19 +283,19 @@ def extract_topics(text, n=8):
         "You are labelling the topics covered in a lecture.\n"
         f"List at most {n} distinct topics.\n"
         "Each topic must be 1-4 words and specific to the material.\n"
-        'Respond with JSON only: {"topics": ["...", "..."]} \n\n'
+        "Respond with JSON only: {'topics': ['...', '...']} \n\n"
         f"Lecture material:\n{text}"
     )
 
     for _ in range(3):
         raw = ollama.generate(
-            model=TEXT_MODEL, prompt=prompt, format="json",
-            options={"temperature": 0.1, "seed": 42},
-        )["response"]
+            model=TEXT_MODEL, prompt=prompt, format='json',
+            options={'temperature': 0.1, 'seed': 42},
+        )['response']
 
         # extract topics from generated text
         try:
-            topics = [str(t).strip() for t in json.loads(raw)["topics"] if str(t).strip()]
+            topics = [str(t).strip() for t in json.loads(raw)['topics'] if str(t).strip()]
         except (json.JSONDecodeError, KeyError, TypeError):
             continue
 
@@ -309,4 +309,4 @@ def extract_topics(text, n=8):
         if out:
             return out[:n]
 
-    return ["General"]
+    return ['General']

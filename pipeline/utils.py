@@ -4,7 +4,7 @@ import hashlib
 import imagehash
 
 
-@inst.timed("fusion of extracted text")
+@inst.timed('fusion of extracted text')
 def fuse(transcript, slides, notes, figure):
     """
     combines all pieces of extracted text together
@@ -12,15 +12,15 @@ def fuse(transcript, slides, notes, figure):
 
     parts = []
     components = [
-        {'name': "TRANSCRIPT", 'content': transcript}, 
-        {'name': "SLIDE", 'content': slides}, 
-        {'name': "NOTES", 'content': notes}, 
-        {'name': "FIGURE", 'content': figure}
+        {'name': 'TRANSCRIPT', 'content': transcript}, 
+        {'name': 'SLIDE', 'content': slides}, 
+        {'name': 'NOTES', 'content': notes}, 
+        {'name': 'FIGURE', 'content': figure}
     ]
 
     for component in components:
         content = component['content'].strip()
-        if content and content.lower() != "none":
+        if content and content.lower() != 'none':
             parts.append(f"[{component['name']}]\n{content}")
 
     fusion = '\n\n'.join(parts)
@@ -33,7 +33,7 @@ def image_hash(img):
     returns unique hash of image (used to detect duplicates)
     """
     buffer = BytesIO()
-    img.convert("RGB").save(buffer, format="PNG")
+    img.convert('RGB').save(buffer, format='PNG')
 
     return hashlib.md5(buffer.getvalue()).hexdigest
 
@@ -56,7 +56,7 @@ def deduplicate_images(images):
 
 
 def resize_image(img, max_size=1024):
-    img = img.convert("RGB")
+    img = img.convert('RGB')
 
     width, height = img.size
 
@@ -82,7 +82,7 @@ def image_phash(images, max_dist=5):
 
     for img in images:
         # convert to RGB for uniformity
-        img_rgb = img.convert("RGB")
+        img_rgb = img.convert('RGB')
 
         # calculate perceptual hash
         h = imagehash.phash(img_rgb)

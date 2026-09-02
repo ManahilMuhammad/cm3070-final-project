@@ -2,6 +2,7 @@ import ollama
 import json
 import instrumentation as inst
 import streamlit as st
+import tts
 from .config import TEXT_MODEL
 
 def _priority_bucket(confidence):
@@ -9,10 +10,10 @@ def _priority_bucket(confidence):
     assign priority to topics based on confidence scores
     """
     if confidence < 0.4:
-        return "high"
+        return 'high'
     if confidence < 0.7:
-        return "medium"
-    return "low"
+        return 'medium'
+    return 'low'
 
 def _allocate_days(topics, duration_days):
     """
@@ -65,30 +66,30 @@ CONTENT:
 {combined}
 
 For EACH topic listed in PERFORMANCE, write 1 to 3 concrete, specific study
-actions based ONLY on the CONTENT above (e.g. "re-read the section on X",
-"practice deriving Y"). Order each topic's actions from most to least important.
+actions based ONLY on the CONTENT above (e.g. 're-read the section on X',
+'practice deriving Y'). Order each topic's actions from most to least important.
 
 Return ONLY JSON in this exact shape:
-{{"actions": {{"<topic name exactly as given>": ["<action 1>", "<action 2>"]}}}}"""
+{{'actions': {{'<topic name exactly as given>': ['<action 1>', '<action 2>']}}}}"""
 
     for retry in range(retries):
         response = ollama.chat(
             model=TEXT_MODEL,
             messages=[
-                {"role": "system", "content": "You write specific study actions as JSON. You never write a paragraph."},
-                {"role": "user", "content": prompt},
+                {'role': 'system', 'content': 'You write specific study actions as JSON. You never write a paragraph.'},
+                {'role': 'user', 'content': prompt},
             ],
-            format="json",
-            options={"temperature": 0.3},
+            format='json',
+            options={'temperature': 0.3},
         ) # get content for the day for each topic in the learning plan
 
         try:
-            data = json.loads(response["message"]["content"])
+            data = json.loads(response['message']['content'])
         except json.JSONDecodeError:
-            print(f"Failed at attempt {retry}")
+            print(f'Failed at attempt {retry}')
             continue
 
-        actions = data.get("actions")
+        actions = data.get('actions')
         if isinstance(actions, dict) and actions:
 
             # return the topic and its generated action
@@ -100,7 +101,7 @@ Return ONLY JSON in this exact shape:
 
     return {}
 
-@inst.timed("create plan")
+@inst.timed('create plan')
 def create_plan(performance, combined, duration_days=7):
     try:
         perf_list = json.loads(performance)
@@ -108,7 +109,7 @@ def create_plan(performance, combined, duration_days=7):
         perf_list = []
 
     # get each topic and its confidence
-    topics = [(p["topic"], p["confidence"]) for p in perf_list if "topic" in p and "confidence" in p]
+    topics = [(p['topic'], p['confidence']) for p in perf_list if 'topic' in p and 'confidence' in p]
     if not topics:
         return []
 
@@ -121,14 +122,14 @@ def create_plan(performance, combined, duration_days=7):
     for topic, confidence, day_count in allocation:
 
         # create the schedule organised according to the day and topic
-        actions = actions_by_topic.get(topic) or ["Review your notes and the summary for this topic."]
+        actions = actions_by_topic.get(topic) or ['Review your notes and the summary for this topic.']
         for i in range(day_count):
             schedule.append({
-                "day": day_num,
-                "topic": topic,
-                "confidence": confidence,
-                "priority": _priority_bucket(confidence),
-                "action": actions[i % len(actions)],
+                'day': day_num,
+                'topic': topic,
+                'confidence': confidence,
+                'priority': _priority_bucket(confidence),
+                'action': actions[i % len(actions)],
             })
             day_num += 1
 
@@ -136,9 +137,9 @@ def create_plan(performance, combined, duration_days=7):
 
 # for tagging topics in the learning plan
 PRIORITY_STYLE = {
-    "high": ("\U0001F534", "High priority"),
-    "medium": ("\U0001F7E1", "Medium priority"),
-    "low": ("\U0001F7E2", "Low priority"),
+    'high': ('\U0001F534', 'High priority'),
+    'medium': ('\U0001F7E1', 'Medium priority'),
+    'low': ('\U0001F7E2', 'Low priority'),
 }
 
 def _plan_to_markdown(plan):
@@ -146,15 +147,28 @@ def _plan_to_markdown(plan):
     converts learning plan to MD
     """
 
-    lines = ["# Your Personalised Learning Plan", ""]
+    lines = ['# Your Personalised Learning Plan', '']
 
     for item in plan:
-        icon, label = PRIORITY_STYLE.get(item['priority'], ("", ""))
-        lines.append(f"## Day {item['day']} - {icon} {item['topic']} ({label})".strip())
-        lines.append(f"- [ ] {item['action']}")
-        lines.append("")
+        icon, label = PRIORITY_STYLE.get(item['priority'], ('', ''))
+        lines.append(f'## Day {item['day']} - {icon} {item['topic']} ({label})'.strip())
+        lines.append(f'- [ ] {item['action']}')
+        lines.append('')
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
+
+def _plan_to_speech(plan):
+    """
+    converts textual plan to speech for each day
+    """
+
+    lines = ['Your personalised learning plan.']
+
+    for item in plan:
+        _, label = PRIORITY_STYLE.get(item['priority'], ('', ''))
+        lines.append(f'Day {item['day']}. {item['topic']}. {label}. {item['action']}')
+
+    return '\n'.join(lines)
 
 ss = st.session_state
 
@@ -165,24 +179,26 @@ def render_study_plan(plan):
 
     # if no topics were found then return
     if not plan:
-        st.success("Nice work — no weak topics found, so no study plan is needed.")
+        st.success('Nice work! No weak topics found, so no study plan is needed.')
         return
 
     total = len(plan)
     done = sum(1 for item in plan if ss.get(f"plan_day_{item['day']}"))
-    st.progress(done / total, text=f"{done}/{total} days completed")
+    st.progress(done / total, text=f'{done}/{total} days completed')
 
     st.download_button(
-        "Download learning plan",
+        'Download learning plan',
         data=_plan_to_markdown(plan),
-        file_name="learning_plan.md",
-        mime="text/markdown",
-        help="Save this plan so you can still access it after you close the app.",
+        file_name='learning_plan.md',
+        mime='text/markdown',
+        help='Save this plan so you can still access it after you close the app.',
     )
+
+    tts.controls(_plan_to_speech(plan), key='plan', label='Read plan out loud') # text-to-speech
 
     # display topics according to priority
     for item in plan:
-        icon, label = PRIORITY_STYLE.get(item['priority'], ("⚪", ""))
+        icon, label = PRIORITY_STYLE.get(item['priority'], ('⚪', ''))
         title = f"Day {item['day']} · {icon} {item['topic']} ({label})"
         with st.expander(title, expanded=(item['day'] == 1)):
             st.checkbox(item['action'], key=f"plan_day_{item['day']}")
