@@ -24,24 +24,21 @@ def extract_from_audio(audio_path):
 # --> VIDEO EXTRACTION
 def extract_from_video(video_path):
     """
-    extract audio and slide frames from video
+    extract audio from video
     """
     video_path = str(video_path)
-    print(f"Video path: {video_path}")
     
     # extract audio (copy file first)
     audio_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
 
     result = subprocess.run([
         "ffmpeg",
-        "-y",                    
-        "-i", video_path,
-        "-vn",                   
-        "-acodec", "pcm_s16le",  
-        audio_path
-    ], capture_output=True, text=True, timeout=300)  
-
-    print("-- EXTRACTED AUDIO --")
+        "-y", # overwrite output file                    
+        "-i", video_path, # input file
+        "-vn", # keep only audio                  
+        "-acodec", "pcm_s16le",
+        audio_path # output file
+    ], capture_output=True, text=True, timeout=300) # raise timeout if longer than 300 seconds taken
 
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
@@ -53,7 +50,6 @@ def extract_from_video(video_path):
 
 
 # --> PDF EXTRACTION
-
 def extract_from_pdf(pdf_path):
     """
     extract text and images from PDF
@@ -79,7 +75,6 @@ def extract_from_pdf(pdf_path):
             
             # convert to PIL Image
             img_data = pix.tobytes("ppm")
-            from io import BytesIO
             img = Image.open(BytesIO(img_data))
             img.load()  # force load into memory
             images.append(img)
@@ -93,7 +88,6 @@ def extract_from_pdf(pdf_path):
 
 
 # --> PPTX EXTRACTION
-
 def extract_from_pptx(pptx_path):
     """
     extract text and images/figures from pptx
@@ -121,10 +115,7 @@ def extract_from_pptx(pptx_path):
 
                     # make a fully independent PIL image
                     pil_image = pil_image.copy()
-
                     images.append(pil_image)
-
-                    print("Image detected!")
 
                 except Exception as e:
                     print(f"Failed to extract image: {e}")
@@ -134,7 +125,6 @@ def extract_from_pptx(pptx_path):
 
 
 # --> UNIFIED ROUTER
-
 def extract_from_file(file_obj):
     """
     route file to correct extraction function based on type
