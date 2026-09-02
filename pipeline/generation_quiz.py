@@ -284,7 +284,7 @@ def extract_topics(text, n=8):
         f"List at most {n} distinct topics.\n"
         "Each topic must be 1-4 words and specific to the material.\n"
         'Respond with JSON only: {"topics": ["...", "..."]} \n\n'
-        f"Lecture material:\n{text[:6000]}"
+        f"Lecture material:\n{text}"
     )
 
     for _ in range(3):
