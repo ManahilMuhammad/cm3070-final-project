@@ -107,10 +107,10 @@ if ss.stage == 'upload':
                         st.stop()
                     
                     status.update(label='Generating summary...') # checkpoint 6: creating summary
-                    ss.summary = make_summary(ss.combined)
+                    ss.summary = make_summary(ss.combined[:12000])
         
                     status.update(label='Generating quiz...') # checkpoint 7: creating quiz
-                    ss.quiz = make_quiz(ss.summary) or []
+                    ss.quiz = make_quiz(ss.summary[:6000]) or []
 
                 status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
                     
@@ -153,7 +153,6 @@ elif ss.stage == 'quiz':
     else:
         answer = st.text_input('Your answer:', key=f'q{ss.q_index}')
 
-
     # read out questions and answers to choose from
     spoken = q['question'].replace('_____', 'blank') # replace the spaces with the word 'blank' in text-to-speech
     if q['type'] == 'true-false':
@@ -193,9 +192,11 @@ elif ss.stage == 'results':
         with st.status('Preparing your results...', expanded=True) as status:
             status.update(label='Scoring your answers...') # checkpoint 1: scoring
             ss.performance = generate_score(ss.results)
+            release_llm(unload=True, end_of_phase=False) # free llama but dont save run
 
             status.update(label='Generating feedback...') # checkpoint 2: feedback generation
             ss.feedback = generate_feedback(ss.performance, ss.summary)
+            release_llm(unload=True, end_of_phase=False) # free llama but dont save run
 
             status.update(label='Done!', state='complete') # checkpoint 3: coplete
 
@@ -226,7 +227,7 @@ elif ss.stage == 'results':
                 ss.plan = create_plan(ss.performance, ss.summary, duration_days=duration)
                 status.update(label='Done!', state='complete')
 
-            release_llm() # release llama3.2
+            release_llm(unload=True, end_of_phase=True) # release llama3.2
             st.rerun()
 
     # display plan
