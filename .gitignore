@@ -2,3 +2,4 @@ __pycache__
 .pytest_cache
 timings.jsonl
 tests/results
+sprout.db
