@@ -15,19 +15,125 @@ import tempfile
 import cv2
 import os
 import tts
+from auth import create_user, get_user
+from persistence import save_lecture, save_quiz_result, get_user_lectures, get_quiz_results
+from database import Session, Lecture
+import json
 
 st.title('Sprout')
 
 ss = st.session_state
+if 'user_id' not in ss:
+    ss.user_id = None
 if 'stage' not in ss:
-    ss.stage = 'upload'
+    ss.stage = 'login'
     ss.q_index = 0
     ss.results = []
+
+# LOGIN SCREEN
+if ss.user_id is None:
+    st.title('Sprout')
+    st.subheader('Sign in to your account')
+
+    email = st.text_input('Email')
+    name = st.text_input('Name (for new accounts)')
+
+    if st.button('Sign In / Create Account'):
+        if email:
+            user_id = create_user(email, name or email.split('@')[0])
+            ss.user_id = user_id
+            ss.user_name = get_user(user_id).name
+            st.rerun()
+        else:
+            st.warning('Please enter an email')
+
+    st.stop()
+
+# SIDEBAR
+with st.sidebar:
+    st.write(f' {ss.user_name}')
+
+    if st.button('Home'):
+        ss.stage = 'home'
+        st.rerun()
+    if st.button('New Session'):
+        ss.stage = 'upload'
+        st.rerun()
+    if st.button('Sign Out'):
+        ss.user_id = None
+        st.rerun()
+
+# HOME SCREEN
+if ss.stage == 'home':
+    st.header('Your Sessions')
+
+    sessions = get_user_lectures(ss.user_id)
+
+    if not sessions:
+        st.info('No sessions yet. Start with uploading your study material!')
+        if st.button('Upload Materials'):
+            ss.stage = 'upload'
+            st.rerun()
+
+    else:
+        for session in sessions:
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                st.write(f'**{session.title}**')
+                st.caption(f'Uploaded: {session.created_at.strftime('%b %d, %Y')}')
+
+            with col2:
+                if st.button('View', key=f'view-{session.lecture_id}'):
+                    ss.selected_lecture_id = session.lecture_id
+                    ss.stage = 'detail'
+                    st.rerun()
+
+            with col3:
+                if st.button('Delete', key=f'del-{session.lecture_id}'):
+                    continue # TO IMPLEMENT: delete functionality
+
+# SESSION DETAIL SCREEN
+if ss.stage == 'detail':
+    session_id = ss.selected_lecture_id
+    session = Session()
+    lecture = session.query(Lecture).filter_by(lecture_id=session_id).first()
+    session.close()
+
+    st.header(lecture.title)
+    st.subheader('Summary')
+    st.write(lecture.summary)
+
+    st.subheader('Past Results')
+    results = get_quiz_results(session_id)
+
+    if not results:
+        st.info('No quiz results available for this lecture.')
+    else:
+        for i, result in enumerate(results, 1):
+            with st.expander(f"Attempt {i} - {result.complicated_at.strftime('%b %d, %Y')}"):
+                perf = json.loads(result.performance)
+                for topic, score in perf.items():
+                    st.write(f"- **{topic}**: {score['score']} (confidence: {score['confidence']:.1%})")
+
+                st.write('**Feedback:**')
+                st.write(result.feedback)
+
+                st.write('**Study plan:**')
+                plan = json.loads(result.study_plan)
+                for item in plan:
+                    st.write(f"- Day {item['day']}: {item['action']}")
 
 # UPLOAD SCREEN
 if ss.stage == 'upload':
     st.subheader("Upload your lecture material")
     st.write("Upload one or multiple files (video, audio, slides, images)")
+
+    lecture_title = st.text_input(
+        'Give a title to this session: ',
+        value='Untitled',
+        help="e.g. 'homeostasis lecture 1'"
+    )
     
     files = st.file_uploader(
         'Upload files',
@@ -115,6 +221,16 @@ if ss.stage == 'upload':
                 status.update(label='Processing complete!', state='complete') # checkpoint 8: complete
                     
                 release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
+
+                # save lecture
+                session_id = save_lecture(
+                    ss.user_id,
+                    lecture_title,
+                    files,
+                    ss.combined,
+                    ss.summary
+                )
+
                 ss.stage = 'summary'
                 st.rerun()
 
@@ -160,7 +276,11 @@ elif ss.stage == 'quiz':
     elif q.get('options'):
         spoken += '. Your options are: ' + ', '.join(f'{i}. {o}' for i, o in enumerate(q['options'], 1)) # read out mcq options
 
-    tts.controls(spoken, key=f'q{ss.q_index}', label='Read question') # text-to-speech
+    @st.fragment
+    def tts_section():
+        tts.controls(spoken, key=f'q{ss.q_index}', label='Read question') # text-to-speech
+
+    tts_section() # calling here so clicking button does not reset whole app
 
     if st.button('Submit'):
         tts.stop() # stop text-to-speech
@@ -188,7 +308,15 @@ elif ss.stage == 'quiz':
 elif ss.stage == 'results':
     st.header('Your Results')
 
+    # initialise if missing
     if 'performance' not in ss:
+        ss.performance = None
+    if 'feedback' not in ss:
+        ss.feedback = None
+    if 'plan' not in ss:
+        ss.plan = None
+
+    if ss.performance is None:
         with st.status('Preparing your results...', expanded=True) as status:
             status.update(label='Scoring your answers...') # checkpoint 1: scoring
             ss.performance = generate_score(ss.results)
@@ -204,9 +332,11 @@ elif ss.stage == 'results':
 
     # FEEDBACK
     st.subheader('Feedback')
-    st.write(ss.feedback)
-
-    tts.controls(ss.feedback, key='feedback') # text-to-speech
+    if ss.feedback:
+        st.write(ss.feedback)
+        tts.controls(ss.feedback, key='feedback') # text-to-speech
+    else:
+        st.info('Generating feedback...')
 
     # LEARNING PLAN
     st.subheader('Your Personalised Learning Plan')
@@ -228,8 +358,19 @@ elif ss.stage == 'results':
                 status.update(label='Done!', state='complete')
 
             release_llm(unload=True, end_of_phase=True) # release llama3.2
+
             st.rerun()
 
     # display plan
     else:
         render_study_plan(ss.plan)
+
+    save_quiz_result(
+        ss.user_id,
+        ss.lecture_id,
+        ss.quiz,
+        ss.results,
+        ss.performance,
+        ss.feedback,
+        ss.plan
+    )
