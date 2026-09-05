@@ -2,6 +2,20 @@ from database import Session, Lecture, QuizResult
 import uuid
 import json
 
+def load_json(val):
+    """
+    decode JSON colun value into python data
+    unwrap until string stops being returned
+    """
+    for _ in range(3):
+        if not isinstance(val, str):
+            break
+        try:
+            val = json.loads(val)
+        except (json.JSONDecodeError, TypeError):
+            break
+    return val
+
 def save_lecture(user_id, title, files, combined_text, summary):
     """
     save processed lecture
@@ -34,11 +48,11 @@ def save_quiz_result(user_id, lecture_id, quiz, results, performance, feedback, 
         result_id=result_id,
         lecture_id=lecture_id,
         user_id=user_id,
-        quiz_questions=json.dumps(quiz),
-        user_answers=json.dumps(results),
-        performance=json.dumps(performance),
+        quiz_questions=quiz,
+        user_answers=results,
+        performance=performance,
         feedback=feedback,
-        study_plan=json.dumps(plan)
+        study_plan=plan
     )
     session.add(quiz_result)
     session.commit()

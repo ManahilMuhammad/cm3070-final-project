@@ -16,7 +16,7 @@ import cv2
 import os
 import tts
 from auth import create_user, get_user
-from persistence import save_lecture, save_quiz_result, get_user_lectures, get_quiz_results
+from persistence import save_lecture, save_quiz_result, get_user_lectures, get_quiz_results, load_json
 from database import Session, Lecture
 import json
 
@@ -111,16 +111,18 @@ if ss.stage == 'detail':
         st.info('No quiz results available for this lecture.')
     else:
         for i, result in enumerate(results, 1):
-            with st.expander(f"Attempt {i} - {result.complicated_at.strftime('%b %d, %Y')}"):
-                perf = json.loads(result.performance)
-                for topic, score in perf.items():
-                    st.write(f"- **{topic}**: {score['score']} (confidence: {score['confidence']:.1%})")
+            with st.expander(f"Attempt {i} - {result.completed_at.strftime('%b %d, %Y')}"):
+                perf = load_json(result.performance) or []
+                for entry in perf:
+                    st.write(f"- **{entry['topic']}**: {entry['score']} (confidence: {entry['confidence']:.1%})")
 
                 st.write('**Feedback:**')
                 st.write(result.feedback)
 
                 st.write('**Study plan:**')
-                plan = json.loads(result.study_plan)
+                plan = load_json(result.study_plan) or []
+                if not plan:
+                    st.caption('No learning plan was generated for this session.')
                 for item in plan:
                     st.write(f"- Day {item['day']}: {item['action']}")
 
@@ -223,7 +225,7 @@ if ss.stage == 'upload':
                 release_llm(unload=False) # keep llama3.2 for scoring/feedback/plan
 
                 # save lecture
-                session_id = save_lecture(
+                ss.lecture_id = save_lecture(
                     ss.user_id,
                     lecture_title,
                     files,
@@ -342,7 +344,7 @@ elif ss.stage == 'results':
     st.subheader('Your Personalised Learning Plan')
 
     # create plan if not already done
-    if 'plan' not in ss:
+    if ss.plan == None:
 
         # ask student how long they want the plan to be
         duration = st.slider(
