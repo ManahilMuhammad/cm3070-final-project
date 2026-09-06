@@ -3,3 +3,4 @@ __pycache__
 timings.jsonl
 tests/results
 sprout.db
+.streamlit/secrets.toml
