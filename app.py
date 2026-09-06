@@ -15,9 +15,12 @@ import tempfile
 import cv2
 import os
 import tts
-from auth import create_user, get_user
-from persistence import save_lecture, save_quiz_result, get_user_lectures, get_quiz_results, load_json
-from database import Session, Lecture
+from auth import sign_in, sign_up, sign_out, display_name
+from persistence import (
+    save_lecture, save_result, update_study_plan,
+    get_lectures, get_lecture, get_results,
+    load_json, fmt_date
+)
 import json
 
 st.title('Sprout')
@@ -32,42 +35,81 @@ if 'stage' not in ss:
 
 # LOGIN SCREEN
 if ss.user_id is None:
-    st.title('Sprout')
     st.subheader('Sign in to your account')
 
-    email = st.text_input('Email')
-    name = st.text_input('Name (for new accounts)')
+    login_tab, register_tab = st.tabs(['Sign In', 'Create Account'])
 
-    if st.button('Sign In / Create Account'):
-        if email:
-            user_id = create_user(email, name or email.split('@')[0])
-            ss.user_id = user_id
-            ss.user_name = get_user(user_id).name
-            st.rerun()
-        else:
-            st.warning('Please enter an email')
+    with login_tab:
+        email = st.text_input('Email', key='login-email')
+        password = st.text_input('Password', type='password', key='login-password')
+
+        if st.button('Sign In'):
+            if not email or not password:
+                st.warning('Please enter both email and password.')
+            else:
+                try:
+                    user = sign_in(email, password)
+                    ss.user_id = user.id
+                    ss.username = display_name(user)
+                    ss.stage = 'home'
+                    st.rerun()
+                except Exception as e:
+                    st.error(f'Sign in failed: {e}')
+
+    with register_tab:
+        email = st.text_input('Email', key='register-email')
+        name = st.text_input('Name', key='register-name')
+        password = st.text_input(
+            'Password', type='password', key='register-password',
+            help='Your password must be at least 6 characters long.'
+        )
+
+        if st.button('Create Account'):
+            if not email or not password:
+                st.warning('You must enter both an email and a password.')
+            else:
+                try:
+                    user, confirm_needed = sign_up(
+                        email, password, name or email.split('@')[0]
+                    )
+
+                    # UNDECIDED -- if supabase configured to confirm email before continuing
+                    if confirm_needed:
+                        st.success('Your account has successfully been created! Check your inbox to verify your email address then sign in.')
+                    else:
+                        ss.user_id = user.id
+                        ss.username = display_name(user)
+                        ss.stage = 'home'
+                        st.rerun()
+                except Exception as e:
+                    st.error(f'Could not create account! {e}')
 
     st.stop()
 
 # SIDEBAR
 with st.sidebar:
-    st.write(f' {ss.user_name}')
+    st.write(f'{ss.username}')
 
     if st.button('Home'):
         ss.stage = 'home'
         st.rerun()
     if st.button('New Session'):
         ss.stage = 'upload'
+        # forget previous attempt
+        ss.pop('result_id', None)
+        ss.pop('plan_saved', None)
         st.rerun()
     if st.button('Sign Out'):
+        sign_out()
         ss.user_id = None
+        ss.stage = 'login'
         st.rerun()
 
 # HOME SCREEN
 if ss.stage == 'home':
     st.header('Your Sessions')
 
-    sessions = get_user_lectures(ss.user_id)
+    sessions = get_lectures(ss.user_id)
 
     if not sessions:
         st.info('No sessions yet. Start with uploading your study material!')
@@ -80,47 +122,49 @@ if ss.stage == 'home':
             col1, col2, col3 = st.columns([2, 1, 1])
 
             with col1:
-                st.write(f'**{session.title}**')
-                st.caption(f'Uploaded: {session.created_at.strftime('%b %d, %Y')}')
+                st.write(f'**{session['title']}**')
+                st.caption(f"Uploaded: {fmt_date(session['created_at'])}")
 
             with col2:
-                if st.button('View', key=f'view-{session.lecture_id}'):
-                    ss.selected_lecture_id = session.lecture_id
+                if st.button('View', key=f'view-{session['lecture_id']}'):
+                    ss.selected_lecture_id = session['lecture_id']
                     ss.stage = 'detail'
                     st.rerun()
 
             with col3:
-                if st.button('Delete', key=f'del-{session.lecture_id}'):
+                if st.button('Delete', key=f"del-{session['lecture_id']}"):
                     continue # TO IMPLEMENT: delete functionality
 
 # SESSION DETAIL SCREEN
 if ss.stage == 'detail':
     session_id = ss.selected_lecture_id
-    session = Session()
-    lecture = session.query(Lecture).filter_by(lecture_id=session_id).first()
-    session.close()
+    lecture = get_lecture(session_id)
 
-    st.header(lecture.title)
+    if lecture is None:
+        st.error('Lecture not found!')
+        st.stop()
+
+    st.header(lecture['title'])
     st.subheader('Summary')
-    st.write(lecture.summary)
+    st.write(lecture['summary'])
 
     st.subheader('Past Results')
-    results = get_quiz_results(session_id)
+    results = get_results(session_id)
 
     if not results:
         st.info('No quiz results available for this lecture.')
     else:
         for i, result in enumerate(results, 1):
-            with st.expander(f"Attempt {i} - {result.completed_at.strftime('%b %d, %Y')}"):
-                perf = load_json(result.performance) or []
+            with st.expander(f"Attempt {i} - {fmt_date(result['completed_at'])}"):
+                perf = load_json(result['performance']) or []
                 for entry in perf:
                     st.write(f"- **{entry['topic']}**: {entry['score']} (confidence: {entry['confidence']:.1%})")
 
                 st.write('**Feedback:**')
-                st.write(result.feedback)
+                st.write(result['feedback'])
 
                 st.write('**Study plan:**')
-                plan = load_json(result.study_plan) or []
+                plan = load_json(result['study_plan']) or []
                 if not plan:
                     st.caption('No learning plan was generated for this session.')
                 for item in plan:
@@ -367,12 +411,18 @@ elif ss.stage == 'results':
     else:
         render_study_plan(ss.plan)
 
-    save_quiz_result(
-        ss.user_id,
-        ss.lecture_id,
-        ss.quiz,
-        ss.results,
-        ss.performance,
-        ss.feedback,
-        ss.plan
-    )
+    # block reruns on every interaction so write attempt once
+    # and patch learning plan in once it is generated
+    if 'result_id' not in ss:
+        ss.result_id = save_result(
+            ss.user_id,
+            ss.lecture_id,
+            ss.quiz,
+            ss.results,
+            ss.performance,
+            ss.feedback,
+            ss.plan
+        )
+    elif ss.plan is not None and not ss.get('plan_saved'):
+        update_study_plan(ss.result_id, ss.plan)
+        ss.plan_saved = True

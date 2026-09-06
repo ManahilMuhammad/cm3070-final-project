@@ -1,30 +1,54 @@
-from database import User, Session
-import uuid
+"""
+authentication using supabase
+"""
 
-def create_user(email, name):
-    """"
-    create new user if doesn't exist
+from database import get_client
+
+def sign_up(email, password, name):
     """
-    session = Session()
-
-    existing = session.query(User).filter_by(email=email).first()
-    if existing:
-        session.close()
-        return existing.user_id
-
-    user_id = str(uuid.uuid4())
-    user = User(user_id=user_id, email=email, name=name)
-    session.add(user)
-    session.commit()
-    session.close()
-
-    return user_id
-
-def get_user(user_id):
+    register new account
     """
-    fetch user by their id
+    sb = get_client()
+    res = sb.auth.sign_up({
+        'email': email,
+        'password': password,
+        'options': {'data': {'name': name}}
+    })
+
+    return res.user, res.session is None
+
+def sign_in(email, password):
     """
-    session = Session()
-    user = session.query(User).filter_by(user_id=user_id).first()
-    session.close()
-    return user
+    sign in existing user
+    """
+    sb = get_client()
+    res = sb.auth.sign_in_with_password({'email': email, 'password': password})
+    return res.user
+
+def sign_out():
+    """
+    end current session
+    """
+    sb = get_client()
+    try:
+        sb.auth.sign_out()
+    except Exception:
+        pass # token expired or revoked so nothing left to end
+
+def get_user():
+    """
+    fetch signed-in user or None if session gone
+    """
+    sb = get_client()
+    try:
+        res = sb.auth.get_user()
+    except Exception:
+        return None
+    return res.user if res else None
+
+def display_name(user):
+    """
+    name given at sign up with fallback to local part of email
+    """
+    meta = user.user_metadata or {}
+    return meta.get('name') or user.email.split('@')[0]
