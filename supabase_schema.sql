@@ -35,3 +35,7 @@ create policy "own lectures" on public.lectures for all using (auth.uid() = user
 
 drop policy if exists "own results" on public.results;
 create policy "own results" on public.results for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- TABLE PRIVILEGES
+grant select, insert, update, delete on public.lectures to authenticated;
+grant select, insert, update, delete on public.results to authenticated;
