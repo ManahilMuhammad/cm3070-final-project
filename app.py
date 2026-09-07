@@ -18,7 +18,7 @@ import tts
 from auth import sign_in, sign_up, sign_out, display_name
 from persistence import (
     save_lecture, save_result, update_study_plan,
-    get_lectures, get_lecture, get_results,
+    get_lectures, get_lecture, get_results, delete_lecture,
     load_json, fmt_date
 )
 import json
@@ -125,15 +125,44 @@ if ss.stage == 'home':
                 st.write(f'**{session['title']}**')
                 st.caption(f"Uploaded: {fmt_date(session['created_at'])}")
 
+            # view a lecture
             with col2:
                 if st.button('View', key=f'view-{session['lecture_id']}'):
                     ss.selected_lecture_id = session['lecture_id']
                     ss.stage = 'detail'
                     st.rerun()
 
+            # delete a lecture
             with col3:
                 if st.button('Delete', key=f"del-{session['lecture_id']}"):
-                    continue # TO IMPLEMENT: delete functionality
+                    ss.delete_id = session['lecture_id']
+                    ss.delete_title = session['title'] # to reference in confirmation
+                    st.rerun()
+
+        if 'delete_id' in ss:
+            st.divider()
+            st.warning(f"Delete '{ss.delete_title}'? This action can not be undone.")
+
+            confirm, cancel = st.columns(2)
+
+            # confirm deletion
+            with confirm:
+                if st.button('Confirm', key='confirm-delete'):
+                    delete_lecture(ss.delete_id)
+                    ss.pop('delete_id')
+                    ss.pop('delete_title')
+
+                    st.success('Lecture deleted.')
+
+                    time.sleep(1)
+                    st.rerun()
+
+            # cancel deletion
+            with cancel:
+                if st.button('Cancel', key='cancel-delete'):
+                    ss.pop('delete_id')
+                    ss.pop('delete_title')
+                    st.rerun()
 
 # SESSION DETAIL SCREEN
 if ss.stage == 'detail':

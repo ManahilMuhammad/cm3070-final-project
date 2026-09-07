@@ -107,3 +107,10 @@ def get_results(lecture_id):
     )
 
     return res.data 
+
+def delete_lecture(lecture_id):
+    """
+    delete lecture by id
+    """
+    sb = get_client()
+    sb.table(LECTURES).delete().eq('lecture_id', lecture_id).execute()
