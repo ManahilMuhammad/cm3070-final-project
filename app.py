@@ -140,29 +140,30 @@ if ss.stage == 'home':
                     st.rerun()
 
         if 'delete_id' in ss:
-            st.divider()
-            st.warning(f"Delete '{ss.delete_title}'? This action can not be undone.")
+            @st.dialog('Confirm deletion')
+            def confirm_delete():
+                st.write(f"Delete '{ss.delete_title}'?")
+                st.caption('This action cannot be undone.')
+                confirm, cancel = st.columns(2)
 
-            confirm, cancel = st.columns(2)
+                # confirm deletion
+                with confirm:
+                    if st.button('Delete', key='confirm-delete'):
+                        delete_lecture(ss.delete_id)
+                        ss.pop('delete_id')
+                        ss.pop('delete_title')
+                        st.success('Lecture deleted.')
+                        time.sleep(1)
+                        st.rerun()
 
-            # confirm deletion
-            with confirm:
-                if st.button('Confirm', key='confirm-delete'):
-                    delete_lecture(ss.delete_id)
-                    ss.pop('delete_id')
-                    ss.pop('delete_title')
+                # cancel deletion
+                with cancel:
+                    if st.button('Cancel', key='cancel-delete'):
+                        ss.pop('delete_id')
+                        ss.pop('delete_title')
+                        st.rerun()
 
-                    st.success('Lecture deleted.')
-
-                    time.sleep(1)
-                    st.rerun()
-
-            # cancel deletion
-            with cancel:
-                if st.button('Cancel', key='cancel-delete'):
-                    ss.pop('delete_id')
-                    ss.pop('delete_title')
-                    st.rerun()
+            confirm_delete()
 
 # SESSION DETAIL SCREEN
 if ss.stage == 'detail':
