@@ -94,7 +94,7 @@ def get_lecture(lecture_id):
 
 def get_results(lecture_id):
     """
-    get all quiz results for user with id in parameter
+    get quiz results for lecture with id in parameter
     """
     sb = get_client()
 

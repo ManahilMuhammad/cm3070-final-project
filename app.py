@@ -319,7 +319,7 @@ elif ss.stage == 'summary':
     st.header('Summary')
     st.markdown(ss.summary)
 
-    tts.controls(ss.summary, key='summary') # text-to-speech options
+    tts.controls(ss.summary, key='summary') # text-to-speech option
 
     if st.button('Start quiz'):
         tts.stop() # stop text-to-speech

@@ -138,7 +138,10 @@ Do NOT repeat or closely rephrase any of these questions already asked:
 {already}
 """ # avoid duplicates
 
-        prompt = f"""You are a quiz generator. Read the content, then create exactly {count} DIFFERENT {ques_type} questions, one for each topic listed below, in the same order.
+        prompt = f"""
+You are a quiz generator. Read the content, then create exactly 
+{count} DIFFERENT {ques_type} questions, one for each topic listed below, 
+in the same order.
 
 CONTENT:
 {content}
@@ -154,9 +157,11 @@ General rules:
 - Each question must be understandable and answerable on its own, without needing to see the original content.
 - The {count} questions must all be different from each other.
 
-Return ONLY a JSON object with this EXACT key: 'questions' - a list of exactly {count} objects, each with keys 'question', 'answer', 'options', in the same order as the topics above.
+Return ONLY a JSON object with this EXACT key: 'questions' - a list of exactly {count} objects, each with keys 
+'question', 'answer', 'options', in the same order as the topics above.
 Example shape: {json.dumps({'questions': [spec['shape']] * count})}
-Do NOT return a summary. Do NOT use any other keys."""
+Do NOT return a summary. Do NOT use any other keys.
+"""
 
         response = ollama.chat(model=TEXT_MODEL,
                                messages=[

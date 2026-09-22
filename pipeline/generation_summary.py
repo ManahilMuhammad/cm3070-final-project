@@ -17,15 +17,19 @@ def make_summary(combined):
 Follow this exact structure:
 1. A single '# Overview' section: 2-3 sentences describing what the material covers.
 2. One '## <Topic>' heading for EACH distinct topic, in the order it first appears.
-3. Under each topic heading, 3-6 concise bullet points with the key facts, definitions, and relationships for that topic.
+3. Under each topic heading, 3-6 concise bullet points with the key facts, definitions, 
+    and relationships for that topic.
 4. A final '## Key Terms' section: a bulleted list formatted as '**Term** - one-line definition'.
 
 Rules:
-- Use ONLY information present in the TEXT below. Do not add outside knowledge or examples not present in the text.
+- Use ONLY information present in the TEXT below. Do not add outside knowledge or examples not 
+    present in the text.
 - Mention every topic covered in the TEXT; do not omit or merge distinct topics.
 - Be concise and factual. No filler like 'In this lecture' or 'This section discusses'.
 - Use consistent markdown: '#' for the title, '##' for headings, '-' for bullets.
-- Do NOT include any preamble, meta-commentary, or sign-off - no 'Here is a summary', no 'Based on the text provided', no 'I hope this helps'. Output must start immediately with '# Overview' and end after the Key Terms section.
+- Do NOT include any preamble, meta-commentary, or sign-off - no 'Here is a summary', no 
+    'Based on the text provided', no 'I hope this helps'. Output must start immediately 
+    with '# Overview' and end after the Key Terms section.
 
 TEXT:
 {combined}
