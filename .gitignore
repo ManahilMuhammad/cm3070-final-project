@@ -4,3 +4,5 @@ timings.jsonl
 tests/results
 sprout.db
 .streamlit/secrets.toml
+test_vl_images
+test_vl_text
