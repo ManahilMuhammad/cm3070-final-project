@@ -2,7 +2,7 @@
 
 Sprout is a multimodal study assistant that uses lecture material and student performance to generate customised learning resources. Students upload academic videos, audios, PDFs, PPTXs and/or images of handwritten or scanned notes, and these are used to generate a summary and quiz. While taking the quiz, response times to each question are recorded. These response times are used in conjunction with whether or not each answer was correct to calculate **confidence scores**. Confidence scores are used to generate personalised feedback and a personalised learning plan that allocates priorities to topics depending on the confidence scores achieved therein.
 
-All pretrained models used run locally via **[Ollama](https://ollama.com)** and **[Hugging Face](https://huggingface.co)**. Study sessions are saved and accounts are authenticated using **[Supabase](https://supabase.com)**
+All pretrained models used run locally via **[Ollama](https://ollama.com)** and **[Hugging Face](https://huggingface.co)**. Study sessions are saved and accounts are authenticated using **[Supabase](https://supabase.com)**.
 
 ## How it works
 1. **Upload**: upload accepted file types and give the session a title
